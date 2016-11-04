@@ -1,0 +1,336 @@
+#!/bin/bash
+
+#title           :MyOScopy
+#description     :This script is used for copy Linux OS to backup device.
+#author          :Michal Muransky
+#date            :30-October-16
+version=1.7.4
+
+
+
+# SETINGS ##############################################################
+
+# Exclude following folders and do not backup them:
+EXCLUDE=(/boot /VMs/iso2 /VMs/img2 /proc /sys /tmp /run /mnt /media /lost+found)
+
+# Log file
+LOG=/tmp/myoscopy.txt
+LOGFILE=/var/log/myoscopy.log
+
+# Email
+EMAIL=mike.muransky@gmail.com
+
+# Path to custom shutdown script (optional)
+SHUTSCRIPT=/usr/bin/shut
+
+
+# SETINGS - defaults which should not be edited #######################
+
+# Delete previous backup
+DEL=1
+
+# Shutdown after backup
+SHUT=0
+
+# Send email
+SENDEMAIL=1
+
+# Overwrite the warinigs and continue
+FORCE=0
+
+
+# CODE ##################################################################
+
+TEMP=`getopt -o xvnsSchfd: --long no-delete,help,version,show,shutdown,no-email,clear,force,debug,to-disk: -- "$@"`
+eval set -- "$TEMP"
+
+
+# MANDATORY CHECKS:
+
+usercheck()  {
+        wai=$(whoami 2>/dev/null)
+        if [ $wai != root ]; then
+                echo 'USER CHECK DID NOT PASS: You must be a root to run MyOSCopy.'
+                exit 1
+        fi
+}
+
+componentscheck() {
+	if [ ! -f /usr/bin/mailx ]; then
+		if [ ! -f /bin/mailx ]; then
+			echo "COMPONENT CHECK DID NOT PASS: mailx is missing. Email report will be not sent!"
+			sleep 2
+		fi
+	fi
+	if [ ! -f /usr/bin/rsync ]; then
+		echo "COMPONENT CHECK DID NOT PASS: rsync is missing. Please install it first!"
+		sleep 2
+		exit 1
+	fi
+}
+
+
+# WARNINGS:
+
+sizecheck()     {
+        EXCEPTGREP=${EXCLUDE[@]/#/|}; EXCEPTGREP=$(echo "$EXCEPTGREP"| cut -c 2- |tr -d " \t\n\r" )
+        WHAT=$(cat /etc/fstab |grep -vE "#|swap|SWAP|myoscopy" |grep -vE "$EXCEPTGREP" | grep -E "UUID|/dev" |awk '{print $2}'| sed ':a;N;$!ba;s/\n/ /g')
+        NLINES=$(df -kP $WHAT | sed 1d |uniq | wc -l)
+        COUNTER=0
+        TOGETHER=0
+        while [ $COUNTER -lt $NLINES ]; do
+                let COUNTER=COUNTER+1
+                LINE=$(df -kP $WHAT | grep -v "df"| sed 1d |uniq |awk '{print $3}'|sed "${COUNTER}q;d")
+                TOGETHER=$(expr $TOGETHER + $LINE)
+        done
+        DEDSIZE=$(df -k /mnt/myoscopy | sed 1d |awk '{print $2}')
+        if [ $TOGETHER -gt $DEDSIZE ]; then
+                echo "WARNING: Destination is too small. Choose larger disk." >> $LOG
+		echo "WARNING: Destination is too small. Choose larger disk."
+		sendlog
+		cat $LOG >> $LOGFILE
+                clear
+                exit 1
+        fi
+}
+
+patched() {
+        LASTPATCH=$(stat -c "%y %n" /boot/initramfs-*|cut -d ' ' -f 1 |tr -d "-" |sort -rn|head -1)
+        TODAY=$(date +%Y%m%d)
+        SO=$(( ($(date --date=$TODAY +%s) - $(date --date=$LASTPATCH +%s) )/(60*60*24) ))
+        if [ $SO -lt 7 ]; then
+                echo "WARNING: Server was patched only $SO days back! OScopy is stopped." >> $LOG
+                echo "WARNING: Server was patched only $SO days back! OScopy is stopped."
+                sendlog
+                cat $LOG >> $LOGFILE
+		clear
+                exit 1
+        fi
+}
+
+mounted() {
+        MOUNTED=$(grep $DED /proc/mounts)
+        if [ -n "$MOUNTED" ]; then
+           echo "WARNING: Destination $DED is already mounted!" >> $LOG
+           echo "WARNING: Destination $DED is already mounted!"
+           sendlog
+           cat $LOG >> $LOGFILE
+	   clear
+           exit 1
+        fi
+}
+
+
+# MAIN PROCESSES:
+
+fstabedit() {	
+	echo "Editing fstab on backup device."
+	FSTYPE=$(df -T $DED | tail -1 | awk '{print $2}')
+	echo $DED "  /  " $FSTYPE " defaults  1 1" > /mnt/myoscopy/etc/fstab
+	cp /etc/fstab /tmp/fstab
+	egrep "$EXCEPTGREP" /tmp/fstab > /tmp/fstab.temp
+	cat /tmp/fstab.temp >> /mnt/myoscopy/etc/fstab
+	echo "fstab on backup device has been edited:" >> $LOG 2>&1
+	echo "" >> $LOG
+	cat /mnt/myoscopy/etc/fstab >> $LOG
+	echo "" >> $LOG
+}
+
+copy() {
+        usercheck
+	componentscheck
+        > $LOG
+        echo "============================" >> $LOG
+        echo "MyOScopy Report" >> $LOG
+        date >> $LOG
+        if [ -b $DED ]; then DEDREAL=$DED; fi
+        if [ -b /dev/$DED ]; then DEDREAL=/dev/$DED; fi
+        if [ ! -b $DED ]; then
+           echo "Destination $DEDREAL not found!" >> $LOG
+           echo "Destination $DEDREAL not found!"
+           cat $LOG >> $LOGFILE
+           exit 1
+        fi
+        echo $DEDREAL > /var/tmp/myoscopy
+        if [ $FORCE == 0 ]; then mounted; fi
+        if [ $FORCE == 0 ]; then patched; fi
+        echo "Mounting backup device $DEDREAL to /mnt/myoscopy" >> $LOG
+        mkdir /mnt/myoscopy >> $LOG 2>&1
+        mount $DEDREAL /mnt/myoscopy >> $LOG 2>&1
+        if [ $FORCE == 0 ]; then sizecheck; fi
+        if [ $DEL == 1 ]; then
+            echo "Clearing old OS backup." >> $LOG 2>&1
+            echo "Clearing old OS backup. Please wait..."
+            sleep 2; rm -rf /mnt/myoscopy/* >> $LOG 2>&1
+        fi
+        echo "Running backup to $DEDREAL ." >> $LOG
+        echo "Running backup to $DEDREAL . Please wait..."
+	DONOTCOPY=("${EXCLUDE[@]/%//*}")
+        rsync -aAXv --human-readable --exclude=/dev/* ${DONOTCOPY[@]/#/--exclude=} / /mnt/myoscopy | sed '0,/^$/d' >> $LOG 2>&1
+        date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
+	fstabedit
+        echo "Unmounting $DEDREAL and removing /mnt/myoscopy" >> $LOG
+        umount /mnt/myoscopy && sleep 2; rm -r /mnt/myoscopy >> $LOG 2>&1
+        echo "DONE" >> $LOG
+        sendlog
+        sleep 1
+        rm -rf /mnt/myoscopy >> $LOG 2>&1
+        cat $LOG >> $LOGFILE
+        shutdonwserver
+        exit 0
+}
+
+#grubcheck() {}
+
+#bakgrub2() {}
+
+#bakgrub() {}
+
+# POST-PROCESSES:
+
+clear() {
+        usercheck
+        > $LOG
+        #mv $LOG $LOG$(date +%F_%R)"
+        echo "============================" >> $LOG
+        echo "Clearing MyOScopy" >> $LOG
+        date >> $LOG
+        killall rsync >> $LOG 2>&1
+        umount -l /mnt/myoscopy >> $LOG 2>&1
+        sleep 1
+        rm -rf /mnt/myoscopy >> $LOG 2>&1
+        cat $LOG >> $LOGFILE
+        echo "/mnt/myoscopy has been unmounted and cleared"
+}
+
+sendlog() {
+          if [ $SENDEMAIL == 1 ]; then
+            echo "Sending log to $EMAIL"
+            service sendmail start > /dev/null 2>&1; sleep 5
+            cat -v $LOG | mailx -s "MyOScopy report" $EMAIL
+            sleep 3; service sendmail stop > /dev/null 2>&1
+          fi
+}
+
+shutdonwserver() {
+        if [ $SHUT == 1 ]; then
+            echo "Shutting down the system..." >> $LOGFILE 2>&1
+            if [ -f $SHUTSCRIPT ]
+                then
+                        $SHUTSCRIPT 2>&1
+                else
+                        /usr/sbin/shutdown now 2>&1
+			/sbin/shutdown now 2>&1
+                fi
+        fi
+}
+
+
+# ADDITIONAL INFO:
+
+ver() {
+        echo "MyOScopy $version"
+        echo "Author: Michal Muransky"
+        exit 0
+}
+
+show() {
+        usercheck
+        DED=`cat /var/tmp/myoscopy`
+        if [ ! -b $DED ]; then
+                echo "WARNING: MyOScopy did never run on this system or backup device is missing."
+                exit 1
+        fi
+        mkdir /mnt/myoscopy 2> /dev/null
+        mount $DED /mnt/myoscopy 2> /dev/null
+        timestamp=`cat /mnt/myoscopy/.myoscopy_timestamp`
+        noofiles=`du /mnt/myoscopy/ |wc -l|tail -1`
+        echo "==================================================="
+        echo "OS Backup created on $timestamp by $noofiles files"
+        echo "==================================================="
+        ls -la /mnt/myoscopy
+        echo "==================================================="
+        df -hP /mnt/myoscopy
+        echo "==================================================="
+        umount -l /mnt/myoscopy 2> /dev/null
+        sleep 1
+        rm -rf /mnt/myoscopy >> $LOG 2>&1
+        exit 0
+}
+
+help() {
+        echo ""
+        echo "MyOScopy $version"
+        echo ""
+        echo "This script is used to backup whole OS to a different single partition."
+        echo "Backup device is fully operational and can be booted in case of emergency."
+        echo "You must be a root or to be in sudoers to be able to run MyOScopy."
+        echo ""
+        echo "How to use: myoscopy [OPTIONS]... [-d|--to-disk=<partition>]"
+        echo ""
+        echo "Arguments:"
+        echo "-d <partition>, --to-disk=<partition>	Start OSCopy to destionation"
+        echo "					If you are using LVM partition as the destination,"
+        echo "					use path /dev/mapper/... "
+        echo "-S, --shutdown				Shutdown after backup"
+        echo "-x, --no-email				Report will be not sent via email"
+        echo "-c, --clear				Can be used after interrupted backup"
+        echo "-n, --no-delete				Do NOT delete previous backup data. Will update current backup."
+        echo "					Keep in mind that rsync nees some free space for temporarry files."
+        echo "-s, --show				Show last backup info"
+        echo "-f, --force				Force backup and suppress all warnings."
+        echo "-v, --version				Show MyOScopy version"
+        echo "    --debug				Debug mode"
+        echo "-h, --help				This Help page"
+        echo ""
+        echo "Example:"
+        echo "myoscopy --to-disk=/dev/sdb1"
+        echo "myoscopy -Sxd /dev/sdb1"
+        echo "myoscopy -S -f -d /dev/mapper/backup_vg-backup_lv"
+        echo ""
+        exit 0
+}
+
+while true ; do
+    case "$1" in
+        -n|--no-delete)
+            DEL=0
+            shift
+            ;;
+        -v|--version)
+            ver
+            ;;
+        -f|--force)
+             FORCE=1
+             shift
+            ;;
+        -s|--show)
+             show
+            ;;
+        -c|--clear)
+            clear
+            break
+            ;;
+        -x|--no-email)
+            SENDEMAIL=0
+            shift
+            ;;
+        --debug)
+	    set -xv
+	    shift
+            ;;
+        -h|--help)
+            help
+            ;;
+        -d|--to-disk)
+            case "$2" in
+                 *) DED=$2 ; copy ;;
+            esac ;;
+        -S|--shutdown)
+            SHUT=1
+            shift
+            ;;
+        --) help ; shift ; break ;;
+        *) echo "Internal error!" ; exit 1 ;;
+    esac
+done
