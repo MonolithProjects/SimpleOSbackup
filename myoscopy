@@ -3,8 +3,8 @@
 #title           :MyOScopy
 #description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :30-October-16
-version=1.7.4
+#date            :5-November-16
+version=1.7.5
 
 
 
@@ -35,7 +35,7 @@ SHUT=0
 # Send email
 SENDEMAIL=1
 
-# Overwrite the warinigs and continue
+# Override the warinigs and continue
 FORCE=0
 
 
@@ -95,7 +95,7 @@ sizecheck()     {
 }
 
 patched() {
-        LASTPATCH=$(stat -c "%y %n" /boot/initramfs-*|cut -d ' ' -f 1 |tr -d "-" |sort -rn|head -1)
+	LASTPATCH=$(stat -c "%y %n" /boot/initramfs-`uname -r`.img|cut -d ' ' -f 1 |tr -d "-")
         TODAY=$(date +%Y%m%d)
         SO=$(( ($(date --date=$TODAY +%s) - $(date --date=$LASTPATCH +%s) )/(60*60*24) ))
         if [ $SO -lt 7 ]; then
@@ -206,9 +206,14 @@ clear() {
 sendlog() {
           if [ $SENDEMAIL == 1 ]; then
             echo "Sending log to $EMAIL"
-            service sendmail start > /dev/null 2>&1; sleep 5
+	    if [ $(ps -ef |grep -v grep |grep sendmail |wc -l) > 0 ]; then
+		  SMACTIVE=1
+	    else
+		  SMACTIVE=0
+	    fi
+            if [ $SMACTIVE == 0 ]; then service sendmail start > /dev/null 2>&1; sleep 5 ; fi
             cat -v $LOG | mailx -s "MyOScopy report" $EMAIL
-            sleep 3; service sendmail stop > /dev/null 2>&1
+            if [ $SMACTIVE == 0 ]; then sleep 3; service sendmail stop > /dev/null 2>&1 ; fi
           fi
 }
 

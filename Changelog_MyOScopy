@@ -2,6 +2,11 @@
 # Change Log                         >>>>>>>>>>>>>>>
 #===================================================
 #
+# Version 1.7.5
+# - Fixed sendmail issue. Now it will remain in state 
+#   same as before system backup
+# - Corrected the way how the last patching date is measured
+#
 # Version 1.7.4
 # - Fixed issue where excluded mountpoints are not created
 # 
