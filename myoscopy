@@ -3,8 +3,8 @@
 #title           :MyOScopy
 #description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :5-November-16
-version=1.7.5
+#date            :12-November-16
+version=1.7.6
 
 
 
@@ -191,7 +191,6 @@ copy() {
 clear() {
         usercheck
         > $LOG
-        #mv $LOG $LOG$(date +%F_%R)"
         echo "============================" >> $LOG
         echo "Clearing MyOScopy" >> $LOG
         date >> $LOG
@@ -206,14 +205,7 @@ clear() {
 sendlog() {
           if [ $SENDEMAIL == 1 ]; then
             echo "Sending log to $EMAIL"
-	    if [ $(ps -ef |grep -v grep |grep sendmail |wc -l) > 0 ]; then
-		  SMACTIVE=1
-	    else
-		  SMACTIVE=0
-	    fi
-            if [ $SMACTIVE == 0 ]; then service sendmail start > /dev/null 2>&1; sleep 5 ; fi
             cat -v $LOG | mailx -s "MyOScopy report" $EMAIL
-            if [ $SMACTIVE == 0 ]; then sleep 3; service sendmail stop > /dev/null 2>&1 ; fi
           fi
 }
 
@@ -224,8 +216,7 @@ shutdonwserver() {
                 then
                         $SHUTSCRIPT 2>&1
                 else
-                        /usr/sbin/shutdown now 2>&1
-			/sbin/shutdown now 2>&1
+                        shutdown -P now 2>&1
                 fi
         fi
 }
@@ -241,13 +232,13 @@ ver() {
 
 show() {
         usercheck
-        DED=`cat /var/tmp/myoscopy`
-        if [ ! -b $DED ]; then
-                echo "WARNING: MyOScopy did never run on this system or backup device is missing."
+        if [ ! -f /var/tmp/myoscopy ]; then
+                echo "WARNING: File /var/tmp/myoscopy is missing. There are probably no backups."
                 exit 1
         fi
-        mkdir /mnt/myoscopy 2> /dev/null
-        mount $DED /mnt/myoscopy 2> /dev/null
+        LASTDED=$(cat /var/tmp/myoscopy)
+	mkdir /mnt/myoscopy 2> /dev/null
+        mount $LASTDED /mnt/myoscopy 2> /dev/null
         timestamp=`cat /mnt/myoscopy/.myoscopy_timestamp`
         noofiles=`du /mnt/myoscopy/ |wc -l|tail -1`
         echo "==================================================="
@@ -257,7 +248,7 @@ show() {
         echo "==================================================="
         df -hP /mnt/myoscopy
         echo "==================================================="
-        umount -l /mnt/myoscopy 2> /dev/null
+        umount /mnt/myoscopy 2> /dev/null
         sleep 1
         rm -rf /mnt/myoscopy >> $LOG 2>&1
         exit 0
