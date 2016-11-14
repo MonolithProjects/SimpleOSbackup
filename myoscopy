@@ -3,8 +3,8 @@
 #title           :MyOScopy
 #description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :12-November-16
-version=1.7.6
+#date            :30-October-16
+version=2.0-alpha
 
 
 
@@ -24,6 +24,11 @@ EMAIL=mike.muransky@gmail.com
 SHUTSCRIPT=/usr/bin/shut
 
 
+# GRUB title for backup disk (This will be ignored if you are using LILO. For LILO is the title/label hardcoded as "MyOScopy"
+TITLE="Boot from MyOSCopy disk"
+
+
+
 # SETINGS - defaults which should not be edited #######################
 
 # Delete previous backup
@@ -39,9 +44,10 @@ SENDEMAIL=1
 FORCE=0
 
 
+
 # CODE ##################################################################
 
-TEMP=`getopt -o xvnsSchfd: --long no-delete,help,version,show,shutdown,no-email,clear,force,debug,to-disk: -- "$@"`
+TEMP=`getopt -o txvnsSchfd: --long no-delete,help,version,show,shutdown,no-email,clear,force,debug,to-disk: -- "$@"`
 eval set -- "$TEMP"
 
 
@@ -50,6 +56,7 @@ eval set -- "$TEMP"
 usercheck()  {
         wai=$(whoami 2>/dev/null)
         if [ $wai != root ]; then
+		echo "" 
                 echo 'USER CHECK DID NOT PASS: You must be a root to run MyOSCopy.'
                 exit 1
         fi
@@ -58,6 +65,7 @@ usercheck()  {
 componentscheck() {
 	if [ ! -f /usr/bin/mailx ]; then
 		if [ ! -f /bin/mailx ]; then
+			echo ""
 			echo "COMPONENT CHECK DID NOT PASS: mailx is missing. Email report will be not sent!"
 			sleep 2
 		fi
@@ -85,38 +93,72 @@ sizecheck()     {
         done
         DEDSIZE=$(df -k /mnt/myoscopy | sed 1d |awk '{print $2}')
         if [ $TOGETHER -gt $DEDSIZE ]; then
-                echo "WARNING: Destination is too small. Choose larger disk." >> $LOG
-		echo "WARNING: Destination is too small. Choose larger disk."
-		sendlog
-		cat $LOG >> $LOGFILE
-                clear
-                exit 1
+		if [ $FORCE == 0 ]; then
+                	echo "WARNING: Destination is too small. Choose larger disk." >> $LOG
+			echo "WARNING: Destination is too small.............  [BACKUP INTERRUPTED]"
+			sendlog
+			cat $LOG >> $LOGFILE
+                	clear
+                	exit 1
+		else
+                        echo "WARNING: Destination is too small. Forced to continue." >> $LOG
+                        echo "WARNING: Destination is too small.............  [FORCED TO CONITUE]"
+			sleep 1
+		fi
         fi
 }
 
 patched() {
-	LASTPATCH=$(stat -c "%y %n" /boot/initramfs-`uname -r`.img|cut -d ' ' -f 1 |tr -d "-")
-        TODAY=$(date +%Y%m%d)
+        if [ -f /boot/vmlinuz-`uname -r` ]; then 
+		LASTPATCH=$(stat -c %z /boot/vmlinuz-`uname -r` |cut -d ' ' -f 1 |tr -d "-")
+       	elif [ -f /boot/vmlinuz-`uname -r`-generic ]; then
+		LASTPATCH=$(stat -c %z /boot/vmlinuz-`uname -r`-generic |cut -d ' ' -f 1 |tr -d "-")
+	elif [ -f /boot/vmlinuz-generic-`uname -r` ]; then
+		LASTPATCH=$(stat -c %z /boot/vmlinuz-generic-`uname -r` |cut -d ' ' -f 1 |tr -d "-")
+	else
+	  echo "WARNING: Unable to determine last patching date. You have 15 seconds to interrupt the backup (Ctrl+C)."
+	  #sleep 15
+	  secs=15
+	  while [ $secs -gt 0 ]; do
+   		echo -ne "-- $secs --\033[0K\r"
+   		sleep 1
+   	  	: $((secs--))
+	  done
+	  return   	
+	fi 
+	TODAY=$(date +%Y%m%d)
         SO=$(( ($(date --date=$TODAY +%s) - $(date --date=$LASTPATCH +%s) )/(60*60*24) ))
         if [ $SO -lt 7 ]; then
-                echo "WARNING: Server was patched only $SO days back! OScopy is stopped." >> $LOG
-                echo "WARNING: Server was patched only $SO days back! OScopy is stopped."
-                sendlog
-                cat $LOG >> $LOGFILE
-		clear
-                exit 1
+		if [ $FORCE == 0 ]; then
+	                echo "WARNING: Server was patched only $SO days back! MyOScopy is stopped." >> $LOG
+        	        echo "WARNING: Server was patched only $SO days back!.  [BACKUP INTERRUPTED]"
+               		sendlog
+               		cat $LOG >> $LOGFILE
+			clear
+               		exit 1
+		else
+	                echo "WARNING: Server was patched only $SO days back! MyOScopy is stopped." >> $LOG
+                        echo "WARNING: Server was patched only $SO days back!.  [FORCED TO CONITUE]"
+			sleep 1
+		fi
         fi
 }
 
 mounted() {
         MOUNTED=$(grep $DED /proc/mounts)
         if [ -n "$MOUNTED" ]; then
-           echo "WARNING: Destination $DED is already mounted!" >> $LOG
-           echo "WARNING: Destination $DED is already mounted!"
-           sendlog
-           cat $LOG >> $LOGFILE
-	   clear
-           exit 1
+		if [ $FORCE == 0 ]; then
+	           	echo "WARNING: $DED is already mounted! MyOScopy is stopped." >> $LOG
+        	   	echo "WARNING: $DED is already mounted!........  [BACKUP INTERRUPTED]"
+           		sendlog
+           		cat $LOG >> $LOGFILE
+	   		clear
+           		exit 1
+		else
+                        echo "WARNING: $DED is already mounted! MyOScopy is stopped." >> $LOG
+                        echo "WARNING: $DED is already mounted!........  [FORCED TO CONITUE]"
+			sleep 1
+		fi
         fi
 }
 
@@ -124,7 +166,7 @@ mounted() {
 # MAIN PROCESSES:
 
 fstabedit() {	
-	echo "Editing fstab on backup device."
+	echo -en "Editing fstab on backup device................ \033[s [IN PROGRESS]"; sleep 1
 	FSTYPE=$(df -T $DED | tail -1 | awk '{print $2}')
 	echo $DED "  /  " $FSTYPE " defaults  1 1" > /mnt/myoscopy/etc/fstab
 	cp /etc/fstab /tmp/fstab
@@ -134,6 +176,7 @@ fstabedit() {
 	echo "" >> $LOG
 	cat /mnt/myoscopy/etc/fstab >> $LOG
 	echo "" >> $LOG
+	echo -e "\033[u [DONE]        "	
 }
 
 copy() {
@@ -152,25 +195,33 @@ copy() {
            exit 1
         fi
         echo $DEDREAL > /var/tmp/myoscopy
-        if [ $FORCE == 0 ]; then mounted; fi
-        if [ $FORCE == 0 ]; then patched; fi
+        mounted
+        patched
         echo "Mounting backup device $DEDREAL to /mnt/myoscopy" >> $LOG
         mkdir /mnt/myoscopy >> $LOG 2>&1
         mount $DEDREAL /mnt/myoscopy >> $LOG 2>&1
-        if [ $FORCE == 0 ]; then sizecheck; fi
+        sizecheck
         if [ $DEL == 1 ]; then
             echo "Clearing old OS backup." >> $LOG 2>&1
-            echo "Clearing old OS backup. Please wait..."
-            sleep 2; rm -rf /mnt/myoscopy/* >> $LOG 2>&1
+            echo -en "Clearing old OS backup.................... \033[s [IN PROGRESS]"; sleep 1
+            rm -rf /mnt/myoscopy/* >> $LOG 2>&1
+	    echo -e "\033[u [DONE]        "; sleep 1
         fi
         echo "Running backup to $DEDREAL ." >> $LOG
-        echo "Running backup to $DEDREAL . Please wait..."
+        echo -ne "Running backup to $DEDREAL................... \033[s [IN PROGRESS]"
 	DONOTCOPY=("${EXCLUDE[@]/%//*}")
-        rsync -aAXv --human-readable --exclude=/dev/* ${DONOTCOPY[@]/#/--exclude=} / /mnt/myoscopy | sed '0,/^$/d' >> $LOG 2>&1
+        rsync -aAv --human-readable --exclude=/dev/* ${DONOTCOPY[@]/#/--exclude=} / /mnt/myoscopy | sed '0,/^$/d' >> $LOG 2>&1
         date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
+        echo -e "\033[u [DONE]        "; sleep 1
 	fstabedit
+        kernelbak
+        if [ -d /boot/grub2 ]; then grub2edit; fi
+        if [ -f /boot/grub/menu.lst ]; then grub01edit; fi
+        if [ -f /etc/lilo.conf ]; then liloedit; fi
         echo "Unmounting $DEDREAL and removing /mnt/myoscopy" >> $LOG
+	echo -en "Unmounting $DEDREAL.......................... \033[s [IN PROGRESS]"; sleep 1
         umount /mnt/myoscopy && sleep 2; rm -r /mnt/myoscopy >> $LOG 2>&1
+	echo -e "\033[u [DONE]        "; sleep 1
         echo "DONE" >> $LOG
         sendlog
         sleep 1
@@ -180,15 +231,94 @@ copy() {
         exit 0
 }
 
-#grubcheck() {}
+kernelbak() {
+        echo "Copying current kernel." >> $LOG 2>&1
+        echo -en "Copying current kernel........................ \033[s [IN PROGRESS]"; sleep 1
+        cp -f /boot/vmlinuz-`uname -r` /boot/vmlinuz-MyOScopy 2>/dev/null
+        cp -f /boot/vmlinuz-huge-`uname -r` /boot/vmlinuz-MyOScopy 2>/dev/null
+	cp -f /boot/initramfs-`uname -r`.img /boot/initramfs-MyOScopy.img 2>/dev/null
+	echo -e "\033[u [DONE]        "; sleep 1
+}
 
-#bakgrub2() {}
+grub2edit() {
+	GRUBCFG=$(find /boot -name grub.cfg|grep grub.cfg)
+	if [ -f /etc/grub.d/50_myoscopy ]; then
+		echo "MyOScopy found in GRUB 2......................  [NO CHANGE]"
+		echo "MyOScopy found in GRUB 2." >> $LOG 2>&1
+	else
+		echo -en "Editing GRUB 2................................ \033[s [IN PROGRESS]"
+		echo "MyOScopy was not found in GRUB 2." >> $LOG 2>&1
+		> /etc/grub.d/50_myoscopy
+		chmod +x /etc/grub.d/50_myoscopy
+		source /etc/default/grub
+		BOOTDISK=$(grep /boot /etc/fstab |awk '{print $1}')
+		if [[ "$BOOTDISK" =~ UUID ]]; then
+			BOOTDISK=$(echo $BOOTDISK | tr -d "UUID=")
+		fi
+		echo '#!/bin/bash' >> /etc/grub.d/50_myoscopy
+		echo 'exec tail -n +3 $0' >> /etc/grub.d/50_myoscopy
+		echo "#MyOScopy auto generated GRUB entry" >> /etc/grub.d/50_myoscopy
+		echo "menuentry 'Boot from MyOSCopy disk'  {" >> /etc/grub.d/50_myoscopy
+		echo "		load_video" >> /etc/grub.d/50_myoscopy
+		echo "		set gfxpayload=keep" >> /etc/grub.d/50_myoscopy
+		echo "		insmod gzio" >> /etc/grub.d/50_myoscopy
+		echo "		insmod part_msdos" >> /etc/grub.d/50_myoscopy
+		echo "		insmod ext2" >> /etc/grub.d/50_myoscopy
+		echo "		insmod lvm" >> /etc/grub.d/50_myoscopy
+		echo "		search --no-floppy --fs-uuid --set=root $BOOTDISK" >> /etc/grub.d/50_myoscopy
+		echo "		linux16 /vmlinuz-MyOScopy root=$DED $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_myoscopy
+		echo "		initrd16 /initramfs-MyOScopy.img" >> /etc/grub.d/50_myoscopy
+		echo "}" >> /etc/grub.d/50_myoscopy
+	        grub2-mkconfig -o $GRUBCFG &> /dev/null 
+        	echo -e "\033[u [DONE]        "
+        	echo "GRUB is configured." >> $LOG 2>&1
+	fi
+}
 
-#bakgrub() {}
+grub01edit() {
+	GRUBCFG=$(find /boot -name grub.conf|grep grub.conf)
+	if grep -q "$TITLE" $GRUBCFG ; then
+		echo "MyOScopy found in GRUB........................  [NO CHANGE]"
+        	echo "MyOScopy found in GRUB." >> $LOG 2>&1
+	else
+                echo "Editing GRUB 2................................ \033[s [IN PROGRESS]"
+                echo "MyOScopy was not found in GRUB 1.X." >> $LOG 2>&1
+		ROOTHD=$(cat $GRUBCFG |grep "root ("|grep -v "#"|head)
+		echo "#MyOScopy auto generated GRUB entry - START" >> $GRUBCFG
+		echo "title $TITLE" >> $GRUBCFG
+		echo "$ROOTHD" >> $GRUBCFG
+		AFTERKERNEL=$(cat /boot/grub/grub.conf |grep "kernel /vmlinuz-"| grep -v "#" |head -1| cut -d" " -f5-)
+		echo "		kernel /vmlinuz-MyOScopy ro root=$DED" $AFTERKERNEL >> $GRUBCFG
+		echo "		initrd /initramfs-MyOScopy.img " >> $GRUBCFG
+		echo "#MyOScopy auto generated GRUB entry - END" >> $GRUBCFG
+                echo "GRUB is configured."
+                echo "GRUB is configured." >> $LOG 2>&1
+	fi
+}
+
+liloedit() {
+	if grep -q "MyOScopy" /etc/lilo.conf ; then
+		echo "MyOScopy found in LILO........................  [NO CHANGE]"
+		echo "MyOScopy found in LILO." >> $LOG >&1
+	else
+		echo "Editing LILO..................................  [vvvv]"	
+		echo "MyOScopy was not found in LILO. Configuring ..." >> $LOG 2>&1
+		echo "#MyOScopy auto generated LILO entry - START" >> /etc/lilo.conf
+		echo "image = /boot/vmlinuz-MyOScopy" >> /etc/lilo.conf
+		echo "	root = $DED" >> /etc/lilo.conf
+		echo "	label = MyOScopy" >> /etc/lilo.conf
+		echo "	read-only" >> /etc/lilo.conf
+		echo "#MyOScopy auto generated LILO entry - END" >> /etc/lilo.conf
+		lilo 
+		echo "Editing LILO..................................  [DONE]"; sleep 1
+		echo "LILO is configured."  >> $LOG 2>&1
+	fi
+}
 
 # POST-PROCESSES:
 
 clear() {
+	echo -en "Clearing the MyOScopy state................... \033[s [IN PROGRESS]"
         usercheck
         > $LOG
         echo "============================" >> $LOG
@@ -199,13 +329,14 @@ clear() {
         sleep 1
         rm -rf /mnt/myoscopy >> $LOG 2>&1
         cat $LOG >> $LOGFILE
-        echo "/mnt/myoscopy has been unmounted and cleared"
+        echo -e "\033[u [DONE]        "; sleep 1
 }
 
 sendlog() {
           if [ $SENDEMAIL == 1 ]; then
-            echo "Sending log to $EMAIL"
+            echo -en "Sending log to $EMAIL ....... \033[s [IN PROGRESS]"
             cat -v $LOG | mailx -s "MyOScopy report" $EMAIL
+	    echo -e "\033[u [DONE]        "; sleep 1
           fi
 }
 
@@ -236,9 +367,9 @@ show() {
                 echo "WARNING: File /var/tmp/myoscopy is missing. There are probably no backups."
                 exit 1
         fi
-        LASTDED=$(cat /var/tmp/myoscopy)
-	mkdir /mnt/myoscopy 2> /dev/null
-        mount $LASTDED /mnt/myoscopy 2> /dev/null
+	DED=$(cat /var/tmp/myoscopy)
+        mkdir /mnt/myoscopy 2> /dev/null
+        mount $DED /mnt/myoscopy 2> /dev/null
         timestamp=`cat /mnt/myoscopy/.myoscopy_timestamp`
         noofiles=`du /mnt/myoscopy/ |wc -l|tail -1`
         echo "==================================================="
@@ -289,6 +420,10 @@ help() {
 
 while true ; do
     case "$1" in
+	-t)
+	    bakgrub1
+	    break
+	    ;;
         -n|--no-delete)
             DEL=0
             shift
