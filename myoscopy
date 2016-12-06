@@ -3,7 +3,7 @@
 #title           :MyOScopy
 #description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :30-October-16
+#date            :06-December-16
 version=2.0-alpha
 
 
@@ -17,15 +17,21 @@ EXCLUDE=(/boot /VMs/iso2 /VMs/img2 /proc /sys /tmp /run /mnt /media /lost+found)
 LOG=/tmp/myoscopy.txt
 LOGFILE=/var/log/myoscopy.log
 
-# Email
-EMAIL=mike.muransky@gmail.com
-
 # Path to custom shutdown script (optional)
 SHUTSCRIPT=/usr/bin/shut
 
-
 # GRUB title for backup disk (This will be ignored if you are using LILO. For LILO is the title/label hardcoded as "MyOScopy"
 TITLE="Boot from MyOSCopy disk"
+
+# Email
+EMAIL=XXXXXXXXXXXXXX@XXXXXXXXXX.com
+
+# External SMTP server
+MTP="smtp.gmail.com:587"
+SMTPUSER="XXXXXXXXXXXXXX@gmail.com"
+SMTPPASS="XXXXXXXXXXXXXX"
+NSSCONFIGDIR="/etc/pki/nssdb/"
+
 
 
 
@@ -203,7 +209,7 @@ copy() {
         sizecheck
         if [ $DEL == 1 ]; then
             echo "Clearing old OS backup." >> $LOG 2>&1
-            echo -en "Clearing old OS backup.................... \033[s [IN PROGRESS]"; sleep 1
+            echo -en "Clearing old OS backup........................ \033[s [IN PROGRESS]"; sleep 1
             rm -rf /mnt/myoscopy/* >> $LOG 2>&1
 	    echo -e "\033[u [DONE]        "; sleep 1
         fi
@@ -335,7 +341,7 @@ clear() {
 sendlog() {
           if [ $SENDEMAIL == 1 ]; then
             echo -en "Sending log to $EMAIL ....... \033[s [IN PROGRESS]"
-            cat -v $LOG | mailx -s "MyOScopy report" $EMAIL
+            cat -v $LOG | mailx -r "hero0msg@gmail.com" -s "MyOScopy report" -S smtp=$SMTP -S smtp-use-starttls -S smtp-auth=login -S smtp-auth-user=$SMTPUSER -S smtp-auth-password=$SMTPPASS -S ssl-verify=ignore -S nss-config-dir=$NSSCONFIGDIR $EMAIL
 	    echo -e "\033[u [DONE]        "; sleep 1
           fi
 }
