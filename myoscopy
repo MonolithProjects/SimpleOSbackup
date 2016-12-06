@@ -24,12 +24,12 @@ SHUTSCRIPT=/usr/bin/shut
 TITLE="Boot from MyOSCopy disk"
 
 # Email
-EMAIL=XXXXXXXXXXXXXX@XXXXXXXXXX.com
+EMAIL=XXXXX@gmail.com
 
 # External SMTP server
-MTP="smtp.gmail.com:587"
-SMTPUSER="XXXXXXXXXXXXXX@gmail.com"
-SMTPPASS="XXXXXXXXXXXXXX"
+SMTP="smtp.gmail.com:587"
+SMTPUSER="XXXXXX@gmail.com"
+SMTPPASS="XXXXXX"
 NSSCONFIGDIR="/etc/pki/nssdb/"
 
 
@@ -341,7 +341,7 @@ clear() {
 sendlog() {
           if [ $SENDEMAIL == 1 ]; then
             echo -en "Sending log to $EMAIL ....... \033[s [IN PROGRESS]"
-            cat -v $LOG | mailx -r "hero0msg@gmail.com" -s "MyOScopy report" -S smtp=$SMTP -S smtp-use-starttls -S smtp-auth=login -S smtp-auth-user=$SMTPUSER -S smtp-auth-password=$SMTPPASS -S ssl-verify=ignore -S nss-config-dir=$NSSCONFIGDIR $EMAIL
+            cat -v $LOG | mailx -r $SMTPUSER -s "MyOScopy report" -S smtp=$SMTP -S smtp-use-starttls -S smtp-auth=login -S smtp-auth-user=$SMTPUSER -S smtp-auth-password=$SMTPPASS -S ssl-verify=ignore -S nss-config-dir=$NSSCONFIGDIR $EMAIL
 	    echo -e "\033[u [DONE]        "; sleep 1
           fi
 }
