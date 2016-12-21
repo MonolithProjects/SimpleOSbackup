@@ -3,39 +3,20 @@
 #title           :MyOScopy
 #description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :06-December-16
+#date            :21-December-16
 version=2.0-alpha
 
 
 
-# SETINGS ##############################################################
+# SETTINGS ##############################################################
 
-# Exclude following folders and do not backup them:
-EXCLUDE=(/boot /VMs/iso2 /VMs/img2 /proc /sys /tmp /run /mnt /media /lost+found)
+# Since version 2.0 the settings are in /etc/myoscopy.conf 
 
-# Log file
+
+# SETTINGS - defaults which should not be edited #######################
+
+# Path to temporary log file
 LOG=/tmp/myoscopy.txt
-LOGFILE=/var/log/myoscopy.log
-
-# Path to custom shutdown script (optional)
-SHUTSCRIPT=/usr/bin/shut
-
-# GRUB title for backup disk (This will be ignored if you are using LILO. For LILO is the title/label hardcoded as "MyOScopy"
-TITLE="Boot from MyOSCopy disk"
-
-# Email
-EMAIL=XXXXX@gmail.com
-
-# External SMTP server
-SMTP="smtp.gmail.com:587"
-SMTPUSER="XXXXXX@gmail.com"
-SMTPPASS="XXXXXX"
-NSSCONFIGDIR="/etc/pki/nssdb/"
-
-
-
-
-# SETINGS - defaults which should not be edited #######################
 
 # Delete previous backup
 DEL=1
@@ -53,9 +34,19 @@ FORCE=0
 
 # CODE ##################################################################
 
-TEMP=`getopt -o txvnsSchfd: --long no-delete,help,version,show,shutdown,no-email,clear,force,debug,to-disk: -- "$@"`
+TEMP=`getopt -o txvnsSchfpd: --long test,no-delete,help,version,show,shutdown,no-email,clear,force,debug,to-partition,to-disk: -- "$@"`
 eval set -- "$TEMP"
 
+# Clearing and reating Settings file
+LOGFILE=""
+SHUTSCRIPT=""
+TITLE=""
+EMAIL=""
+SMTP=""
+SMTPUSER=""
+SMTPPASS=""
+NSSCONFIGDIR=""
+source /etc/myoscopy.conf
 
 # MANDATORY CHECKS:
 
@@ -173,7 +164,7 @@ mounted() {
 
 fstabedit() {	
 	echo -en "Editing fstab on backup device................ \033[s [IN PROGRESS]"; sleep 1
-	FSTYPE=$(df -T $DED | tail -1 | awk '{print $2}')
+	FSTYPE=$(df -T $DEDREAL | tail -1 | awk '{print $2}')
 	echo $DED "  /  " $FSTYPE " defaults  1 1" > /mnt/myoscopy/etc/fstab
 	cp /etc/fstab /tmp/fstab
 	egrep "$EXCEPTGREP" /tmp/fstab > /tmp/fstab.temp
@@ -185,21 +176,89 @@ fstabedit() {
 	echo -e "\033[u [DONE]        "	
 }
 
-copy() {
-        usercheck
-	componentscheck
-        > $LOG
-        echo "============================" >> $LOG
-        echo "MyOScopy Report" >> $LOG
-        date >> $LOG
-        if [ -b $DED ]; then DEDREAL=$DED; fi
-        if [ -b /dev/$DED ]; then DEDREAL=/dev/$DED; fi
-        if [ ! -b $DED ]; then
+dedreal() {
+        if [ -b $DED ]; then 
+		DEDREAL=$DED 
+	elif [ -b /dev/$DED ]; then
+		DEDREAL=/dev/$DED
+        else
            echo "Destination $DEDREAL not found!" >> $LOG
            echo "Destination $DEDREAL not found!"
            cat $LOG >> $LOGFILE
            exit 1
         fi
+}
+
+todisk() {
+	usercheck
+	componentscheck
+	mounted
+	patched
+	sizecheck
+	dedreal
+	EFI=$(ls /boot/ |grep efi)
+	DEDSECT=$(($(($TOGETHER * 1024)) / 512))
+	BYTSPERSECTOR=$(sfdisk -l $DEDREAL |grep Units |awk '{print $8}')
+	BOOTMP=$(grep " /boot" /etc/fstab | awk '{print $2}')
+	BOOTDISK=$(df |grep " /boot" | awk '{print $1}')
+	BOOTFSSIZE=$(sfdisk -l $BOOTDISK |head -1|awk '{print $7}')
+	BOOTFS=$(grep " /boot" /etc/fstab | awk '{print $3}')
+	DEDBP="/tmp/dedbp"
+	SOBD=$(df |grep "/boot" |awk '{print $1}'|sed 's/[0-9]*//g')
+	DEDSECTORS=$(sfdisk -l $DEDREAL | grep "Disk "$DED |awk '{print $7}')
+	#DEDLAB=$(sfdisk -l $SOBD |grep type |awk '{print $3}')
+	#2TB - 2199023255552B
+	if [ "$DEDSECTORS" -gt 4294967292 -o "$EFI" == "efi" ]; then
+		DEDLAB="gpt"
+	else
+		DEDLAB="dos"
+	fi
+	DEDID=$(sfdisk -l $DEDREAL |grep identifier |awk '{print $3}')	#####OVERIT!!!
+	echo "label: " $DEDLAB > $DEDBP
+	#echo "label-id: " $DEDID >> $DEDBP
+	echo "device: " $DEDREAL >> $DEDBP
+	echo "unit: sectors" >> $DEDBP
+	echo "" >> $DEDBP
+	if [ $DEDLAB == "dos" ]; then 
+		echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=83, bootable" >> $DEDBP
+		echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", type=83" >> $DEDBP
+	fi
+	if [ $DEDLAB == "gpt" ]; then 
+		if [ -n "$EFI" ]; then
+			echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B" >> $DEDBP
+		else
+			echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=21686148-6449-6E6F-744E-656564454649" >> $DEDBP #####OVERIT typ!!!
+		fi
+		echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", type=0FC63DAF-8483-4772-8E79-3D69D8477DE4" >> $DEDBP
+	fi
+	sfdisk -q $DEDREAL < $DEDBP >/dev/null
+	if [ -n "$EFI" ]; then
+		mkfs.vfat $DEDREAL"1" >/dev/null
+	else
+		mkfs.ext2 $DEDREAL"1" >/dev/null
+	fi
+	mkfs.ext4 $DEDREAL"2" >/dev/null
+	mkdir -p /mnt/myoscopy
+	mount $DEDREAL"2" /mnt/myoscopy
+	mkdir -p /mnt/myoscopy$BOOTMP
+	mount $DEDREAL"1" /mnt/myoscopy$BOOTMP
+        DONOTCOPY=("${EXCLUDE[@]/%//*}")
+        rsync -aAv --human-readable --exclude=/dev/* ${DONOTCOPY[@]/#/--exclude=} / /mnt/myoscopy | sed '0,/^$/d' >> $LOG 2>&1
+	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
+	
+	break
+
+	
+}
+
+topartition() {
+        usercheck
+	componentscheck
+	dedreal
+        > $LOG
+        echo "============================" >> $LOG
+        echo "MyOScopy Report" >> $LOG
+        date >> $LOG
         echo $DEDREAL > /var/tmp/myoscopy
         mounted
         patched
@@ -426,10 +485,10 @@ help() {
 
 while true ; do
     case "$1" in
-	-t)
-	    bakgrub1
-	    break
-	    ;;
+	-t|--test)
+	    todisk
+            break
+            ;;
         -n|--no-delete)
             DEL=0
             shift
@@ -459,9 +518,13 @@ while true ; do
         -h|--help)
             help
             ;;
-        -d|--to-disk)
+	-d|--to-disk)
             case "$2" in
-                 *) DED=$2 ; copy ;;
+                 *) DED=$2 ; todisk ;;
+            esac ;;
+        -p|--to-partition)
+            case "$2" in
+                 *) DED=$2 ; topartition ;;
             esac ;;
         -S|--shutdown)
             SHUT=1
