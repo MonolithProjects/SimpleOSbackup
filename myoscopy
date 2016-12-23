@@ -3,7 +3,7 @@
 #title           :MyOScopy
 #description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :21-December-16
+#date            :23-December-16
 version=2.0-alpha
 
 
@@ -30,11 +30,13 @@ SENDEMAIL=1
 # Override the warinigs and continue
 FORCE=0
 
+# Copy SELinux permissions
+SELINUX=1
 
 
 # CODE ##################################################################
 
-TEMP=`getopt -o txvnsSchfpd: --long test,no-delete,help,version,show,shutdown,no-email,clear,force,debug,to-partition,to-disk: -- "$@"`
+TEMP=`getopt -o tXxvnsSchfpd: --long test,no-selinux,no-delete,help,version,show,shutdown,no-email,clear,force,debug,to-partition,to-disk: -- "$@"`
 eval set -- "$TEMP"
 
 # Clearing and reating Settings file
@@ -198,6 +200,7 @@ todisk() {
 	dedreal
 	EFI=$(ls /boot/ |grep efi)
 	DEDSECT=$(($(($TOGETHER * 1024)) / 512))
+	DEDSECT=$(($(($DEDSECT / 100)) * 117))
 	BYTSPERSECTOR=$(sfdisk -l $DEDREAL |grep Units |awk '{print $8}')
 	BOOTMP=$(grep " /boot" /etc/fstab | awk '{print $2}')
 	BOOTDISK=$(df |grep " /boot" | awk '{print $1}')
@@ -242,11 +245,14 @@ todisk() {
 	mount $DEDREAL"2" /mnt/myoscopy
 	mkdir -p /mnt/myoscopy$BOOTMP
 	mount $DEDREAL"1" /mnt/myoscopy$BOOTMP
-        DONOTCOPY=("${EXCLUDE[@]/%//*}")
-        rsync -aAv --human-readable --exclude=/dev/* ${DONOTCOPY[@]/#/--exclude=} / /mnt/myoscopy | sed '0,/^$/d' >> $LOG 2>&1
+	copy
 	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
-	
-	break
+        echo "topartition" > /var/tmp/myoscopy
+        echo $DEDREAL"1" >> /var/tmp/myoscopy
+	echo $DEDREAL"2" >> /var/tmp/myoscopy
+	umount /mnt/myoscopy$BOOTMP
+	umount /mnt/myoscopy	
+	exit 0
 
 	
 }
@@ -259,7 +265,8 @@ topartition() {
         echo "============================" >> $LOG
         echo "MyOScopy Report" >> $LOG
         date >> $LOG
-        echo $DEDREAL > /var/tmp/myoscopy
+	echo "topartition" > /var/tmp/myoscopy
+        echo $DEDREAL >> /var/tmp/myoscopy
         mounted
         patched
         echo "Mounting backup device $DEDREAL to /mnt/myoscopy" >> $LOG
@@ -274,9 +281,8 @@ topartition() {
         fi
         echo "Running backup to $DEDREAL ." >> $LOG
         echo -ne "Running backup to $DEDREAL................... \033[s [IN PROGRESS]"
-	DONOTCOPY=("${EXCLUDE[@]/%//*}")
-        rsync -aAv --human-readable --exclude=/dev/* ${DONOTCOPY[@]/#/--exclude=} / /mnt/myoscopy | sed '0,/^$/d' >> $LOG 2>&1
-        date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
+        copy
+	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
         echo -e "\033[u [DONE]        "; sleep 1
 	fstabedit
         kernelbak
@@ -294,6 +300,16 @@ topartition() {
         cat $LOG >> $LOGFILE
         shutdonwserver
         exit 0
+}
+
+copy() {
+        if [ $SELINUX == 1 ]; then
+                SEL="-X"
+        else
+                SEL=""
+        fi
+        DONOTCOPY=("${EXCLUDE[@]/%//*}")
+        rsync -aAv $SEL --human-readable --exclude=/dev/* --exclude=/sys/* --exclude=/run/* --exclude=/proc/* --exclude=/mnt/myoscopy ${DONOTCOPY[@]/#/--exclude=} / /mnt/myoscopy | sed '0,/^$/d' >> $LOG 2>&1
 }
 
 kernelbak() {
@@ -489,6 +505,10 @@ while true ; do
 	    todisk
             break
             ;;
+	-X|--no-selinux)
+	    SELINUX=0
+	    shift
+	    ;;
         -n|--no-delete)
             DEL=0
             shift
