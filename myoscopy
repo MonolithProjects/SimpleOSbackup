@@ -3,7 +3,7 @@
 #title           :MyOScopy
 #description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :23-December-16
+#date            :01-January-17
 version=2.0-alpha
 
 
@@ -36,7 +36,7 @@ SELINUX=1
 
 # CODE ##################################################################
 
-TEMP=`getopt -o tXxvnsSchfpd: --long test,no-selinux,no-delete,help,version,show,shutdown,no-email,clear,force,debug,to-partition,to-disk: -- "$@"`
+TEMP=`getopt -o tXxvnsSchfp:d: --long test,no-selinux,no-delete,help,version,show,shutdown,no-email,clear,force,debug,to-partition:,to-disk: -- "$@"`
 eval set -- "$TEMP"
 
 # Clearing and reating Settings file
@@ -48,6 +48,7 @@ SMTP=""
 SMTPUSER=""
 SMTPPASS=""
 NSSCONFIGDIR=""
+ADDITIONALDONOTCOPY=""
 source /etc/myoscopy.conf
 
 # MANDATORY CHECKS:
@@ -90,6 +91,7 @@ sizecheck()     {
                 LINE=$(df -kP $WHAT | grep -v "df"| sed 1d |uniq |awk '{print $3}'|sed "${COUNTER}q;d")
                 TOGETHER=$(expr $TOGETHER + $LINE)
         done
+	mkdir -p /mnt/myoscopy
         DEDSIZE=$(df -k /mnt/myoscopy | sed 1d |awk '{print $2}')
         if [ $TOGETHER -gt $DEDSIZE ]; then
 		if [ $FORCE == 0 ]; then
@@ -189,6 +191,12 @@ dedreal() {
            cat $LOG >> $LOGFILE
            exit 1
         fi
+	DEDREALNAME=$(echo $DEDREAL | sed 's:/dev/::g')
+	if [ "${DEDREALNAME: -1}" -eq "${DEDREALNAME: -1}" ] &> /dev/null ; then
+		DEDTYPE="partition"
+	else
+		DEDTYPE="disk"
+	fi
 }
 
 todisk() {
@@ -198,49 +206,11 @@ todisk() {
 	patched
 	sizecheck
 	dedreal
-	EFI=$(ls /boot/ |grep efi)
-	DEDSECT=$(($(($TOGETHER * 1024)) / 512))
-	DEDSECT=$(($(($DEDSECT / 100)) * 117))
-	BYTSPERSECTOR=$(sfdisk -l $DEDREAL |grep Units |awk '{print $8}')
-	BOOTMP=$(grep " /boot" /etc/fstab | awk '{print $2}')
-	BOOTDISK=$(df |grep " /boot" | awk '{print $1}')
-	BOOTFSSIZE=$(sfdisk -l $BOOTDISK |head -1|awk '{print $7}')
-	BOOTFS=$(grep " /boot" /etc/fstab | awk '{print $3}')
-	DEDBP="/tmp/dedbp"
-	SOBD=$(df |grep "/boot" |awk '{print $1}'|sed 's/[0-9]*//g')
-	DEDSECTORS=$(sfdisk -l $DEDREAL | grep "Disk "$DED |awk '{print $7}')
-	#DEDLAB=$(sfdisk -l $SOBD |grep type |awk '{print $3}')
-	#2TB - 2199023255552B
-	if [ "$DEDSECTORS" -gt 4294967292 -o "$EFI" == "efi" ]; then
-		DEDLAB="gpt"
-	else
-		DEDLAB="dos"
+	if [ "$DEDTYPE" != "disk" ]; then
+		echo "Toto je particia!!!!!"
+		exit 1
 	fi
-	DEDID=$(sfdisk -l $DEDREAL |grep identifier |awk '{print $3}')	#####OVERIT!!!
-	echo "label: " $DEDLAB > $DEDBP
-	#echo "label-id: " $DEDID >> $DEDBP
-	echo "device: " $DEDREAL >> $DEDBP
-	echo "unit: sectors" >> $DEDBP
-	echo "" >> $DEDBP
-	if [ $DEDLAB == "dos" ]; then 
-		echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=83, bootable" >> $DEDBP
-		echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", type=83" >> $DEDBP
-	fi
-	if [ $DEDLAB == "gpt" ]; then 
-		if [ -n "$EFI" ]; then
-			echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B" >> $DEDBP
-		else
-			echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=21686148-6449-6E6F-744E-656564454649" >> $DEDBP #####OVERIT typ!!!
-		fi
-		echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", type=0FC63DAF-8483-4772-8E79-3D69D8477DE4" >> $DEDBP
-	fi
-	sfdisk -q $DEDREAL < $DEDBP >/dev/null
-	if [ -n "$EFI" ]; then
-		mkfs.vfat $DEDREAL"1" >/dev/null
-	else
-		mkfs.ext2 $DEDREAL"1" >/dev/null
-	fi
-	mkfs.ext4 $DEDREAL"2" >/dev/null
+	createpart
 	mkdir -p /mnt/myoscopy
 	mount $DEDREAL"2" /mnt/myoscopy
 	mkdir -p /mnt/myoscopy$BOOTMP
@@ -251,16 +221,19 @@ todisk() {
         echo $DEDREAL"1" >> /var/tmp/myoscopy
 	echo $DEDREAL"2" >> /var/tmp/myoscopy
 	umount /mnt/myoscopy$BOOTMP
-	umount /mnt/myoscopy	
+	umount /mnt/myoscopy
+	rm -r /mnt/myoscopy	
 	exit 0
-
-	
 }
 
 topartition() {
         usercheck
 	componentscheck
 	dedreal
+        if [ "$DEDTYPE" != "partition" ]; then
+                echo "Toto je disk!!!!!"
+                exit 1
+        fi
         > $LOG
         echo "============================" >> $LOG
         echo "MyOScopy Report" >> $LOG
@@ -281,6 +254,7 @@ topartition() {
         fi
         echo "Running backup to $DEDREAL ." >> $LOG
         echo -ne "Running backup to $DEDREAL................... \033[s [IN PROGRESS]"
+	ADDITIONALDONOTCOPY=" --exclude=/boot/* "
         copy
 	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
         echo -e "\033[u [DONE]        "; sleep 1
@@ -302,6 +276,51 @@ topartition() {
         exit 0
 }
 
+createpart() {
+        EFI=$(ls /boot/ |grep efi)
+        DEDSECT=$(($(($TOGETHER * 1024)) / 512))
+        DEDSECT=$(($(($DEDSECT / 100)) * 117))
+        BYTSPERSECTOR=$(cat /sys/block/$DEDREALNAME/queue/hw_sector_size)
+        BOOTMP=$(grep " /boot" /etc/fstab | awk '{print $2}')
+        BOOTPART=$(df |grep " /boot" | awk '{print $1}')
+        BOOTPARTNAME=$(echo $BOOTPART | sed 's:/dev/::g')
+        SODREALNAME=$(df |grep "/boot" |awk '{print $1}'| sed 's/[0-9]*//g' |sed 's:/dev/::g')
+        BOOTFSSIZE=$(cat /sys/block/$SODREALNAME/$BOOTPARTNAME/size)
+        DEDSECTORS=$(cat /sys/block/$SODREALNAME/size)
+        DEDBP="/tmp/dedbp"
+        #2TB - 2199023255552B
+        if [ "$DEDSECTORS" -gt 4294967292 -o "$EFI" == "efi" ]; then
+                DEDLAB="gpt"
+        else
+                DEDLAB="dos"
+        fi
+        DEDID=$(sfdisk -l $DEDREAL |grep identifier |awk '{print $3}')  #####OVERIT!!!
+        echo "label: " $DEDLAB > $DEDBP
+        echo "device: " $DEDREAL >> $DEDBP
+        echo "unit: sectors" >> $DEDBP
+        echo "" >> $DEDBP
+        if [ $DEDLAB == "dos" ]; then
+                echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=83, bootable" >> $DEDBP
+                echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", type=83" >> $DEDBP
+        fi
+        if [ $DEDLAB == "gpt" ]; then
+                if [ -n "$EFI" ]; then
+                        echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B" >> $DEDBP
+                else
+                        echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=21686148-6449-6E6F-744E-656564454649" >> $DEDBP #####OVERIT typ!!!
+                fi
+                echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", type=0FC63DAF-8483-4772-8E79-3D69D8477DE4" >> $DEDBP
+        fi
+        sfdisk -q $DEDREAL < $DEDBP >/dev/null
+        if [ -n "$EFI" ]; then
+                mkfs.vfat -Fq $DEDREAL"1" >/dev/null
+        else
+                mkfs.ext2 -Fq $DEDREAL"1" >/dev/null
+        fi
+        mkfs.ext4 -Fq $DEDREAL"2" >/dev/null
+
+}
+
 copy() {
         if [ $SELINUX == 1 ]; then
                 SEL="-X"
@@ -309,7 +328,7 @@ copy() {
                 SEL=""
         fi
         DONOTCOPY=("${EXCLUDE[@]/%//*}")
-        rsync -aAv $SEL --human-readable --exclude=/dev/* --exclude=/sys/* --exclude=/run/* --exclude=/proc/* --exclude=/mnt/myoscopy ${DONOTCOPY[@]/#/--exclude=} / /mnt/myoscopy | sed '0,/^$/d' >> $LOG 2>&1
+        rsync -aAv $SEL --human-readable --exclude=/dev/* --exclude=/sys/* --exclude=/run/* --exclude=/proc/* --exclude=/mnt/myoscopy $ADDITIONALDONOTCOPY ${DONOTCOPY[@]/#/--exclude=} / /mnt/myoscopy | sed '0,/^$/d' >> $LOG 2>&1
 }
 
 kernelbak() {
