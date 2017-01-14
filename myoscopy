@@ -428,7 +428,7 @@ pgrub2edit() {
 		echo "		initrd16 /initramfs-MyOScopy.img" >> /etc/grub.d/50_myoscopy
 		echo "}" >> /etc/grub.d/50_myoscopy
 	        grub2-mkconfig -o $GRUBCFG &> /dev/null 
-		if [ "$DEDTYPE" == "partition" ]; then
+		if [ "$DEDTYPE" == "disk" ]; then
 			grub2-install $DEDREAL
 			cp -f $GRUBCFG /mnt/myoscopy$GRUBCFG
 		fi
