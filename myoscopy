@@ -318,12 +318,13 @@ fstabedit() {
                 else
                         echo $DEDREAL"1         " $BOOTMP "     ext2  defaults   0 2" > /mnt/myoscopy/etc/fstab
                 fi
+		echo $DEDREAL"2         /  " $FSTYPE " defaults  1 1" >> /mnt/myoscopy/etc/fstab
         elif [ "$DEDTYPE" == "partition" ] ; then
                 grep " /boot" /etc/fstab > /mnt/myoscopy/etc/fstab
+		echo $DEDREAL "       /  " $FSTYPE " defaults  1 1" >> /mnt/myoscopy/etc/fstab
         fi
-        echo $DED "  /  " $FSTYPE " defaults  1 1" >> /mnt/myoscopy/etc/fstab
-        cp /etc/fstab /tmp/fstab
-        egrep "$EXCEPTGREP" /tmp/fstab > /tmp/fstab.temp
+        #cp /etc/fstab /tmp/fstab
+        egrep "$EXCEPTGREP" /etc/fstab > /tmp/fstab.temp
         cat /tmp/fstab.temp >> /mnt/myoscopy/etc/fstab
         echo "fstab on backup device has been edited:" >> $LOG 2>&1
         echo "" >> $LOG
