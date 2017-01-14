@@ -3,20 +3,23 @@
 #title           :MyOScopy
 #description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :01-January-17
-version=2.0-alpha
+#date            :14-January-17
+version=2.0-alpha6
 
 
 
 # SETTINGS ##############################################################
 
-# Since version 2.0 the settings are in /etc/myoscopy.conf 
+# Since version 2.0 the settings are located in /etc/myoscopy.conf 
 
 
-# SETTINGS - defaults which should not be edited #######################
+# DEFAULTS ##############################################################
 
 # Path to temporary log file
 LOG=/tmp/myoscopy.txt
+
+# Path to settings file
+SETTINGS=/etc/myoscopy.conf
 
 # Delete previous backup
 DEL=1
@@ -39,7 +42,7 @@ SELINUX=1
 TEMP=`getopt -o tXxvnsSchfp:d: --long test,no-selinux,no-delete,help,version,show,shutdown,no-email,clear,force,debug,to-partition:,to-disk: -- "$@"`
 eval set -- "$TEMP"
 
-# Clearing and reating Settings file
+# Clearing and reading Settings file
 LOGFILE=""
 SHUTSCRIPT=""
 TITLE=""
@@ -49,7 +52,7 @@ SMTPUSER=""
 SMTPPASS=""
 NSSCONFIGDIR=""
 ADDITIONALDONOTCOPY=""
-source /etc/myoscopy.conf
+source $SETTINGS
 
 # MANDATORY CHECKS:
 
@@ -80,7 +83,7 @@ componentscheck() {
 
 # WARNINGS:
 
-sizecheck()     {
+sizecheckold()     {
         EXCEPTGREP=${EXCLUDE[@]/#/|}; EXCEPTGREP=$(echo "$EXCEPTGREP"| cut -c 2- |tr -d " \t\n\r" )
         WHAT=$(cat /etc/fstab |grep -vE "#|swap|SWAP|myoscopy" |grep -vE "$EXCEPTGREP" | grep -E "UUID|/dev" |awk '{print $2}'| sed ':a;N;$!ba;s/\n/ /g')
         NLINES=$(df -kP $WHAT | sed 1d |uniq | wc -l)
@@ -107,6 +110,35 @@ sizecheck()     {
 			sleep 1
 		fi
         fi
+}
+
+sizecheck() {
+        EXCEPTGREP=${EXCLUDE[@]/#/|}; EXCEPTGREP=$(echo "$EXCEPTGREP"| cut -c 2- |tr -d " \t\n\r" )
+        WHAT=$(cat /etc/fstab |grep -vE "#|boot|swap|SWAP|myoscopy" |grep -vE "$EXCEPTGREP" | grep -E "UUID|/dev" |awk '{print $2}'| sed ':a;N;$!ba;s/\n/ /g')
+        NLINES=$(df -kP $WHAT | sed 1d |uniq | wc -l)
+        COUNTER=0
+        TOGETHER=0
+        while [ $COUNTER -lt $NLINES ]; do
+                let COUNTER=COUNTER+1
+                LINE=$(df -kP $WHAT | grep -v "df"| sed 1d |uniq |awk '{print $3}'|sed "${COUNTER}q;d")
+                TOGETHER=$(expr $TOGETHER + $LINE)
+        done
+        DEDSIZE=$(df -k /mnt/myoscopy | sed 1d |awk '{print $2}')
+        if [ $TOGETHER -gt $DEDSIZE ]; then
+                if [ $FORCE == 0 ]; then
+                        echo "WARNING: Destination is too small. Choose larger disk." >> $LOG
+                        echo "WARNING: Destination is too small.............  [BACKUP INTERRUPTED]"
+                        sendlog
+                        cat $LOG >> $LOGFILE
+                        clear
+                        exit 1
+                else
+                        echo "WARNING: Destination is too small. Forced to continue." >> $LOG
+                        echo "WARNING: Destination is too small.............  [FORCED TO CONITUE]"
+                        sleep 1
+                fi
+        fi
+
 }
 
 patched() {
@@ -145,7 +177,7 @@ patched() {
         fi
 }
 
-mounted() {
+checkmount() {
         MOUNTED=$(grep $DED /proc/mounts)
         if [ -n "$MOUNTED" ]; then
 		if [ $FORCE == 0 ]; then
@@ -166,127 +198,20 @@ mounted() {
 
 # MAIN PROCESSES:
 
-fstabedit() {	
-	echo -en "Editing fstab on backup device................ \033[s [IN PROGRESS]"; sleep 1
-	FSTYPE=$(df -T $DEDREAL | tail -1 | awk '{print $2}')
-	echo $DED "  /  " $FSTYPE " defaults  1 1" > /mnt/myoscopy/etc/fstab
-	cp /etc/fstab /tmp/fstab
-	egrep "$EXCEPTGREP" /tmp/fstab > /tmp/fstab.temp
-	cat /tmp/fstab.temp >> /mnt/myoscopy/etc/fstab
-	echo "fstab on backup device has been edited:" >> $LOG 2>&1
-	echo "" >> $LOG
-	cat /mnt/myoscopy/etc/fstab >> $LOG
-	echo "" >> $LOG
-	echo -e "\033[u [DONE]        "	
-}
-
-dedreal() {
-        if [ -b $DED ]; then 
-		DEDREAL=$DED 
-	elif [ -b /dev/$DED ]; then
-		DEDREAL=/dev/$DED
-        else
-           echo "Destination $DEDREAL not found!" >> $LOG
-           echo "Destination $DEDREAL not found!"
-           cat $LOG >> $LOGFILE
-           exit 1
-        fi
-	DEDREALNAME=$(echo $DEDREAL | sed 's:/dev/::g')
-	if [ "${DEDREALNAME: -1}" -eq "${DEDREALNAME: -1}" ] &> /dev/null ; then
-		DEDTYPE="partition"
-	else
-		DEDTYPE="disk"
-	fi
-}
 
 todisk() {
 	usercheck
 	componentscheck
-	mounted
+	checkmount
 	patched
-	sizecheck
+	patched
 	dedreal
+	sizecheckold
+	collectinfo
 	if [ "$DEDTYPE" != "disk" ]; then
 		echo "Toto je particia!!!!!"
 		exit 1
 	fi
-	createpart
-	mkdir -p /mnt/myoscopy
-	mount $DEDREAL"2" /mnt/myoscopy
-	mkdir -p /mnt/myoscopy$BOOTMP
-	mount $DEDREAL"1" /mnt/myoscopy$BOOTMP
-	copy
-	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
-        echo "topartition" > /var/tmp/myoscopy
-        echo $DEDREAL"1" >> /var/tmp/myoscopy
-	echo $DEDREAL"2" >> /var/tmp/myoscopy
-	umount /mnt/myoscopy$BOOTMP
-	umount /mnt/myoscopy
-	rm -r /mnt/myoscopy	
-	exit 0
-}
-
-topartition() {
-        usercheck
-	componentscheck
-	dedreal
-        if [ "$DEDTYPE" != "partition" ]; then
-                echo "Toto je disk!!!!!"
-                exit 1
-        fi
-        > $LOG
-        echo "============================" >> $LOG
-        echo "MyOScopy Report" >> $LOG
-        date >> $LOG
-	echo "topartition" > /var/tmp/myoscopy
-        echo $DEDREAL >> /var/tmp/myoscopy
-        mounted
-        patched
-        echo "Mounting backup device $DEDREAL to /mnt/myoscopy" >> $LOG
-        mkdir /mnt/myoscopy >> $LOG 2>&1
-        mount $DEDREAL /mnt/myoscopy >> $LOG 2>&1
-        sizecheck
-        if [ $DEL == 1 ]; then
-            echo "Clearing old OS backup." >> $LOG 2>&1
-            echo -en "Clearing old OS backup........................ \033[s [IN PROGRESS]"; sleep 1
-            rm -rf /mnt/myoscopy/* >> $LOG 2>&1
-	    echo -e "\033[u [DONE]        "; sleep 1
-        fi
-        echo "Running backup to $DEDREAL ." >> $LOG
-        echo -ne "Running backup to $DEDREAL................... \033[s [IN PROGRESS]"
-	ADDITIONALDONOTCOPY=" --exclude=/boot/* "
-        copy
-	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
-        echo -e "\033[u [DONE]        "; sleep 1
-	fstabedit
-        kernelbak
-        if [ -d /boot/grub2 ]; then grub2edit; fi
-        if [ -f /boot/grub/menu.lst ]; then grub01edit; fi
-        if [ -f /etc/lilo.conf ]; then liloedit; fi
-        echo "Unmounting $DEDREAL and removing /mnt/myoscopy" >> $LOG
-	echo -en "Unmounting $DEDREAL.......................... \033[s [IN PROGRESS]"; sleep 1
-        umount /mnt/myoscopy && sleep 2; rm -r /mnt/myoscopy >> $LOG 2>&1
-	echo -e "\033[u [DONE]        "; sleep 1
-        echo "DONE" >> $LOG
-        sendlog
-        sleep 1
-        rm -rf /mnt/myoscopy >> $LOG 2>&1
-        cat $LOG >> $LOGFILE
-        shutdonwserver
-        exit 0
-}
-
-createpart() {
-        EFI=$(ls /boot/ |grep efi)
-        DEDSECT=$(($(($TOGETHER * 1024)) / 512))
-        DEDSECT=$(($(($DEDSECT / 100)) * 117))
-        BYTSPERSECTOR=$(cat /sys/block/$DEDREALNAME/queue/hw_sector_size)
-        BOOTMP=$(grep " /boot" /etc/fstab | awk '{print $2}')
-        BOOTPART=$(df |grep " /boot" | awk '{print $1}')
-        BOOTPARTNAME=$(echo $BOOTPART | sed 's:/dev/::g')
-        SODREALNAME=$(df |grep "/boot" |awk '{print $1}'| sed 's/[0-9]*//g' |sed 's:/dev/::g')
-        BOOTFSSIZE=$(cat /sys/block/$SODREALNAME/$BOOTPARTNAME/size)
-        DEDSECTORS=$(cat /sys/block/$SODREALNAME/size)
         DEDBP="/tmp/dedbp"
         #2TB - 2199023255552B
         if [ "$DEDSECTORS" -gt 4294967292 -o "$EFI" == "efi" ]; then
@@ -294,7 +219,6 @@ createpart() {
         else
                 DEDLAB="dos"
         fi
-        DEDID=$(sfdisk -l $DEDREAL |grep identifier |awk '{print $3}')  #####OVERIT!!!
         echo "label: " $DEDLAB > $DEDBP
         echo "device: " $DEDREAL >> $DEDBP
         echo "unit: sectors" >> $DEDBP
@@ -318,7 +242,146 @@ createpart() {
                 mkfs.ext2 -Fq $DEDREAL"1" >/dev/null
         fi
         mkfs.ext4 -Fq $DEDREAL"2" >/dev/null
+	mountded
+	sizecheck
+	kernelbak
+	copy
+	fstabedit
+	if [ -d /boot/grub2 ]; then pgrub2edit; fi
+	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
+        echo "topartition" > /var/tmp/myoscopy
+        echo $DEDREAL"1" >> /var/tmp/myoscopy
+	echo $DEDREAL"2" >> /var/tmp/myoscopy
+	umount /mnt/myoscopy$BOOTMP
+	umount /mnt/myoscopy
+	rm -r /mnt/myoscopy	
+	exit 0
+}
 
+topartition() {
+        usercheck
+	componentscheck
+	dedreal
+	sizecheckold
+	collectinfo
+        if [ "$DEDTYPE" != "partition" ]; then
+                echo "Toto je disk!!!!!"
+                exit 1
+        fi
+        > $LOG
+        echo "============================" >> $LOG
+        echo "MyOScopy Report" >> $LOG
+        date >> $LOG
+	echo "topartition" > /var/tmp/myoscopy
+        echo $DEDREAL >> /var/tmp/myoscopy
+        checkmount
+        patched
+        echo "Mounting backup device $DEDREAL to /mnt/myoscopy" >> $LOG
+        mountded
+	sizecheck
+        if [ $DEL == 1 ]; then
+            echo "Clearing old OS backup." >> $LOG 2>&1
+            echo -en "Clearing old OS backup........................ \033[s [IN PROGRESS]"; sleep 1
+            rm -rf /mnt/myoscopy/* >> $LOG 2>&1
+	    echo -e "\033[u [DONE]        "; sleep 1
+        fi
+        echo "Running backup to $DEDREAL ." >> $LOG
+        echo -ne "Running backup to $DEDREAL................... \033[s [IN PROGRESS]"
+	ADDITIONALDONOTCOPY=" --exclude=$BOOTMP/* "
+        copy
+	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
+        echo -e "\033[u [DONE]        "; sleep 1
+	fstabedit
+        kernelbak
+        if [ -d /boot/grub2 ]; then pgrub2edit; fi
+        if [ -f /boot/grub/menu.lst ]; then pgrub01edit; fi
+        if [ -f /etc/lilo.conf ]; then pliloedit; fi
+        echo "Unmounting $DEDREAL and removing /mnt/myoscopy" >> $LOG
+	echo -en "Unmounting $DEDREAL.......................... \033[s [IN PROGRESS]"; sleep 1
+        umount /mnt/myoscopy && sleep 2; rm -r /mnt/myoscopy >> $LOG 2>&1
+	echo -e "\033[u [DONE]        "; sleep 1
+        echo "DONE" >> $LOG
+        sendlog
+        sleep 1
+        rm -rf /mnt/myoscopy >> $LOG 2>&1
+        cat $LOG >> $LOGFILE
+        shutdonwserver
+        exit 0
+}
+
+fstabedit() {
+        echo -en "Editing fstab on backup device................ \033[s [IN PROGRESS]"; sleep 1
+        FSTYPE=$(df -T $DEDREAL | tail -1 | awk '{print $2}')
+        if [ "$DEDTYPE" == "disk" ] ; then
+                if [ -n "$EFI" ]; then
+                        echo $DEDREAL"1         " $BOOTMP "     vfat    umask=0077,shortname=winnt   0 2" > /mnt/myoscopy/etc/fstab
+                else
+                        echo $DEDREAL"1         " $BOOTMP "     ext2  defaults   0 2" > /mnt/myoscopy/etc/fstab
+                fi
+        elif [ "$DEDTYPE" == "partition" ] ; then
+                grep " /boot" /etc/fstab > /mnt/myoscopy/etc/fstab
+        fi
+        echo $DED "  /  " $FSTYPE " defaults  1 1" >> /mnt/myoscopy/etc/fstab
+        cp /etc/fstab /tmp/fstab
+        egrep "$EXCEPTGREP" /tmp/fstab > /tmp/fstab.temp
+        cat /tmp/fstab.temp >> /mnt/myoscopy/etc/fstab
+        echo "fstab on backup device has been edited:" >> $LOG 2>&1
+        echo "" >> $LOG
+        cat /mnt/myoscopy/etc/fstab >> $LOG
+        echo "" >> $LOG
+        echo -e "\033[u [DONE]        "
+}
+
+dedreal() {
+        if [ -b $DED ]; then
+                DEDREAL=$DED
+        elif [ -b /dev/$DED ]; then
+                DEDREAL=/dev/$DED
+        else
+           echo "Destination $DEDREAL not found!" >> $LOG
+           echo "Destination $DEDREAL not found!"
+           cat $LOG >> $LOGFILE
+           exit 1
+        fi
+        DEDREALNAME=$(echo $DEDREAL | sed 's:/dev/::g')
+        if [ "${DEDREALNAME: -1}" -eq "${DEDREALNAME: -1}" ] &> /dev/null ; then
+                DEDTYPE="partition"
+        else
+                DEDTYPE="disk"
+        fi
+}
+
+
+collectinfo() {
+        EFI=$(ls /boot/ |grep efi)
+        DEDSECT=$(($(($TOGETHER * 1024)) / 512))
+        DEDSECT=$(($(($DEDSECT / 100)) * 117))
+        BYTSPERSECTOR=$(cat /sys/block/$DEDREALNAME/queue/hw_sector_size)
+        BOOTMP=$(grep " /boot" /etc/fstab | awk '{print $2}')
+        BOOTPART=$(df |grep " /boot" | awk '{print $1}')
+	if [ "$DEDTYPE" == "partition" ] ; then BOOTPARTDED=$(cat /proc/mounts |grep " /boot" |awk '{print $1}'); fi
+	if [ "$DEDTYPE" == "disk" ] ; then BOOTPARTDED=$DEDREAL"1"; fi
+        BOOTPARTNAME=$(echo $BOOTPART | sed 's:/dev/::g')
+	BOOTPARTDEDNAME=$(echo $BOOTPARTDED | sed 's:/dev/::g')
+        SODREALNAME=$(df |grep "/boot" |awk '{print $1}'| sed 's/[0-9]*//g' |sed 's:/dev/::g')
+        BOOTFSSIZE=$(cat /sys/block/$SODREALNAME/$BOOTPARTNAME/size)
+        DEDSECTORS=$(cat /sys/block/$SODREALNAME/size)
+	if [ "$DEDTYPE" == "partition" ] ; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTNAME |awk '{print $9}'); fi
+	if [ "$DEDTYPE" == "disk" ] ; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTDEDNAME |awk '{print $9}'); fi
+
+
+}
+
+mountded() {
+        mkdir /mnt/myoscopy
+	if [ "$DEDTYPE" == "partition" ] ; then
+        	mount $DEDREAL /mnt/myoscopy
+	elif [ "$DEDTYPE" == "disk" ] ; then
+        	mkdir -p /mnt/myoscopy
+        	mount $DEDREAL"2" /mnt/myoscopy
+        	mkdir -p /mnt/myoscopy$BOOTMP
+        	mount $DEDREAL"1" /mnt/myoscopy$BOOTMP
+	fi
 }
 
 copy() {
@@ -340,7 +403,7 @@ kernelbak() {
 	echo -e "\033[u [DONE]        "; sleep 1
 }
 
-grub2edit() {
+pgrub2edit() {
 	GRUBCFG=$(find /boot -name grub.cfg|grep grub.cfg)
 	if [ -f /etc/grub.d/50_myoscopy ]; then
 		echo "MyOScopy found in GRUB 2......................  [NO CHANGE]"
@@ -348,14 +411,9 @@ grub2edit() {
 	else
 		echo -en "Editing GRUB 2................................ \033[s [IN PROGRESS]"
 		echo "MyOScopy was not found in GRUB 2." >> $LOG 2>&1
-		> /etc/grub.d/50_myoscopy
 		chmod +x /etc/grub.d/50_myoscopy
 		source /etc/default/grub
-		BOOTDISK=$(grep /boot /etc/fstab |awk '{print $1}')
-		if [[ "$BOOTDISK" =~ UUID ]]; then
-			BOOTDISK=$(echo $BOOTDISK | tr -d "UUID=")
-		fi
-		echo '#!/bin/bash' >> /etc/grub.d/50_myoscopy
+		echo '#!/bin/bash' > /etc/grub.d/50_myoscopy
 		echo 'exec tail -n +3 $0' >> /etc/grub.d/50_myoscopy
 		echo "#MyOScopy auto generated GRUB entry" >> /etc/grub.d/50_myoscopy
 		echo "menuentry 'Boot from MyOSCopy disk'  {" >> /etc/grub.d/50_myoscopy
@@ -365,17 +423,21 @@ grub2edit() {
 		echo "		insmod part_msdos" >> /etc/grub.d/50_myoscopy
 		echo "		insmod ext2" >> /etc/grub.d/50_myoscopy
 		echo "		insmod lvm" >> /etc/grub.d/50_myoscopy
-		echo "		search --no-floppy --fs-uuid --set=root $BOOTDISK" >> /etc/grub.d/50_myoscopy
+		echo "		search --no-floppy --fs-uuid --set=root $BOOTUUID" >> /etc/grub.d/50_myoscopy
 		echo "		linux16 /vmlinuz-MyOScopy root=$DED $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_myoscopy
 		echo "		initrd16 /initramfs-MyOScopy.img" >> /etc/grub.d/50_myoscopy
 		echo "}" >> /etc/grub.d/50_myoscopy
 	        grub2-mkconfig -o $GRUBCFG &> /dev/null 
+		if [ "$DEDTYPE" == "partition" ]; then
+			grub2-install $DEDREAL
+			cp -f $GRUBCFG /mnt/myoscopy$GRUBCFG
+		fi
         	echo -e "\033[u [DONE]        "
         	echo "GRUB is configured." >> $LOG 2>&1
 	fi
 }
 
-grub01edit() {
+pgrub01edit() {
 	GRUBCFG=$(find /boot -name grub.conf|grep grub.conf)
 	if grep -q "$TITLE" $GRUBCFG ; then
 		echo "MyOScopy found in GRUB........................  [NO CHANGE]"
@@ -396,7 +458,7 @@ grub01edit() {
 	fi
 }
 
-liloedit() {
+pliloedit() {
 	if grep -q "MyOScopy" /etc/lilo.conf ; then
 		echo "MyOScopy found in LILO........................  [NO CHANGE]"
 		echo "MyOScopy found in LILO." >> $LOG >&1
