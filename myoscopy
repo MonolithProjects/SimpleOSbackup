@@ -246,6 +246,7 @@ todisk() {
 	sizecheck
 	kernelbak
 	copy
+	BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTDEDNAME |awk '{print $9}')
 	fstabedit
 	if [ -d /boot/grub2 ]; then pgrub2edit; fi
 	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
@@ -368,7 +369,7 @@ collectinfo() {
         BOOTFSSIZE=$(cat /sys/block/$SODREALNAME/$BOOTPARTNAME/size)
         DEDSECTORS=$(cat /sys/block/$SODREALNAME/size)
 	if [ "$DEDTYPE" == "partition" ] ; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTNAME |awk '{print $9}'); fi
-	if [ "$DEDTYPE" == "disk" ] ; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTDEDNAME |awk '{print $9}'); fi
+#	if [ "$DEDTYPE" == "disk" ] ; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTDEDNAME |awk '{print $9}'); fi ### Can not be collected before part creation
 
 
 }
@@ -428,6 +429,7 @@ pgrub2edit() {
 		echo "		linux16 /vmlinuz-MyOScopy root=$DED $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_myoscopy
 		echo "		initrd16 /initramfs-MyOScopy.img" >> /etc/grub.d/50_myoscopy
 		echo "}" >> /etc/grub.d/50_myoscopy
+		chmod a+x /etc/grub.d/50_myoscopy
 	        grub2-mkconfig -o $GRUBCFG &> /dev/null 
 		if [ "$DEDTYPE" == "disk" ]; then
 			grub2-install $DEDREAL
