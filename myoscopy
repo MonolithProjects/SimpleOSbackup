@@ -3,8 +3,8 @@
 #title           :MyOScopy
 #description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :14-January-17
-version=2.0-alpha6
+#date            :16-February-17
+version=2.0-alpha10
 
 
 
@@ -248,7 +248,7 @@ todisk() {
 	copy
 	BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTDEDNAME |awk '{print $9}')
 	fstabedit
-	if [ -d /boot/grub2 ]; then pgrub2edit; fi
+	if [ -d /boot/grub2 ]; then grub2edit; fi
 	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
         echo "topartition" > /var/tmp/myoscopy
         echo $DEDREAL"1" >> /var/tmp/myoscopy
@@ -294,8 +294,8 @@ topartition() {
         echo -e "\033[u [DONE]        "; sleep 1
 	fstabedit
         kernelbak
-        if [ -d /boot/grub2 ]; then pgrub2edit; fi
-        if [ -f /boot/grub/menu.lst ]; then pgrub01edit; fi
+        if [ -d /boot/grub2 ]; then grub2edit; fi
+        if [ -f /boot/grub/menu.lst ]; then grub01edit; fi
         if [ -f /etc/lilo.conf ]; then pliloedit; fi
         echo "Unmounting $DEDREAL and removing /mnt/myoscopy" >> $LOG
 	echo -en "Unmounting $DEDREAL.......................... \033[s [IN PROGRESS]"; sleep 1
@@ -371,7 +371,6 @@ collectinfo() {
 	if [ "$DEDTYPE" == "partition" ] ; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTNAME |awk '{print $9}'); fi
 #	if [ "$DEDTYPE" == "disk" ] ; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTDEDNAME |awk '{print $9}'); fi ### Can not be collected before part creation
 
-
 }
 
 mountded() {
@@ -405,15 +404,15 @@ kernelbak() {
 	echo -e "\033[u [DONE]        "; sleep 1
 }
 
-pgrub2edit() {
+grub2edit() {
 	GRUBCFG=$(find /boot -name grub.cfg|grep grub.cfg)
+	DEDROOTREAL=$(df |grep "/mnt/myoscopy$" |awk '{print $1}')
 	if [ -f /etc/grub.d/50_myoscopy ]; then
 		echo "MyOScopy found in GRUB 2......................  [NO CHANGE]"
 		echo "MyOScopy found in GRUB 2." >> $LOG 2>&1
 	else
 		echo -en "Editing GRUB 2................................ \033[s [IN PROGRESS]"
 		echo "MyOScopy was not found in GRUB 2." >> $LOG 2>&1
-		chmod +x /etc/grub.d/50_myoscopy
 		source /etc/default/grub
 		echo '#!/bin/bash' > /etc/grub.d/50_myoscopy
 		echo 'exec tail -n +3 $0' >> /etc/grub.d/50_myoscopy
@@ -426,21 +425,30 @@ pgrub2edit() {
 		echo "		insmod ext2" >> /etc/grub.d/50_myoscopy
 		echo "		insmod lvm" >> /etc/grub.d/50_myoscopy
 		echo "		search --no-floppy --fs-uuid --set=root $BOOTUUID" >> /etc/grub.d/50_myoscopy
-		echo "		linux16 /vmlinuz-MyOScopy root=$DED $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_myoscopy
+		echo "		linux16 /vmlinuz-MyOScopy root=$DEDROOTREAL $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_myoscopy
 		echo "		initrd16 /initramfs-MyOScopy.img" >> /etc/grub.d/50_myoscopy
 		echo "}" >> /etc/grub.d/50_myoscopy
 		chmod a+x /etc/grub.d/50_myoscopy
 	        grub2-mkconfig -o $GRUBCFG &> /dev/null 
 		if [ "$DEDTYPE" == "disk" ]; then
-			grub2-install $DEDREAL
+			mount --bind /dev /mnt/myoscopy/dev
+			mount --bind /sys /mnt/myoscopy/sys
+			mount --bind /run /mnt/myoscopy/run
+			mount --bind /proc /mnt/myoscopy/proc
+			chroot /mnt/myoscopy /bin/bash -c "dracut --force --regenerate-all"
+			grub2-install $DEDREAL &> /dev/null
 			cp -f $GRUBCFG /mnt/myoscopy$GRUBCFG
+			umount /mnt/myoscopy/dev
+			umount /mnt/myoscopy/sys
+			umount /mnt/myoscopy/run
+			umount /mnt/myoscopy/proc
 		fi
         	echo -e "\033[u [DONE]        "
         	echo "GRUB is configured." >> $LOG 2>&1
 	fi
 }
 
-pgrub01edit() {
+grub01edit() {
 	GRUBCFG=$(find /boot -name grub.conf|grep grub.conf)
 	if grep -q "$TITLE" $GRUBCFG ; then
 		echo "MyOScopy found in GRUB........................  [NO CHANGE]"
