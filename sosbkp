@@ -1,25 +1,25 @@
 #!/bin/bash
 
-#title           :MyOScopy
+#title           :SimpleOSbackup
 #description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :16-February-17
-version=2.0-alpha10
+#date            :07-March-17
+version=1.0-alpha-1
 
 
 
 # SETTINGS ##############################################################
 
-# Since version 2.0 the settings are located in /etc/myoscopy.conf 
+# Since version 2.0 the settings are located in /etc/sosbkp.conf 
 
 
 # DEFAULTS ##############################################################
 
 # Path to temporary log file
-LOG=/tmp/myoscopy.txt
+LOG=/tmp/sosbkp.txt
 
 # Path to settings file
-SETTINGS=/etc/myoscopy.conf
+SETTINGS=/etc/sosbkp.conf
 
 # Delete previous backup
 DEL=1
@@ -85,7 +85,7 @@ componentscheck() {
 
 sizecheckold()     {
         EXCEPTGREP=${EXCLUDE[@]/#/|}; EXCEPTGREP=$(echo "$EXCEPTGREP"| cut -c 2- |tr -d " \t\n\r" )
-        WHAT=$(cat /etc/fstab |grep -vE "#|swap|SWAP|myoscopy" |grep -vE "$EXCEPTGREP" | grep -E "UUID|/dev" |awk '{print $2}'| sed ':a;N;$!ba;s/\n/ /g')
+        WHAT=$(cat /etc/fstab |grep -vE "#|swap|SWAP|sosbkp" |grep -vE "$EXCEPTGREP" | grep -E "UUID|/dev" |awk '{print $2}'| sed ':a;N;$!ba;s/\n/ /g')
         NLINES=$(df -kP $WHAT | sed 1d |uniq | wc -l)
         COUNTER=0
         TOGETHER=0
@@ -94,8 +94,8 @@ sizecheckold()     {
                 LINE=$(df -kP $WHAT | grep -v "df"| sed 1d |uniq |awk '{print $3}'|sed "${COUNTER}q;d")
                 TOGETHER=$(expr $TOGETHER + $LINE)
         done
-	mkdir -p /mnt/myoscopy
-        DEDSIZE=$(df -k /mnt/myoscopy | sed 1d |awk '{print $2}')
+	mkdir -p /mnt/sosbkp
+        DEDSIZE=$(df -k /mnt/sosbkp | sed 1d |awk '{print $2}')
         if [ $TOGETHER -gt $DEDSIZE ]; then
 		if [ $FORCE == 0 ]; then
                 	echo "WARNING: Destination is too small. Choose larger disk." >> $LOG
@@ -114,7 +114,7 @@ sizecheckold()     {
 
 sizecheck() {
         EXCEPTGREP=${EXCLUDE[@]/#/|}; EXCEPTGREP=$(echo "$EXCEPTGREP"| cut -c 2- |tr -d " \t\n\r" )
-        WHAT=$(cat /etc/fstab |grep -vE "#|boot|swap|SWAP|myoscopy" |grep -vE "$EXCEPTGREP" | grep -E "UUID|/dev" |awk '{print $2}'| sed ':a;N;$!ba;s/\n/ /g')
+        WHAT=$(cat /etc/fstab |grep -vE "#|boot|swap|SWAP|sosbkp" |grep -vE "$EXCEPTGREP" | grep -E "UUID|/dev" |awk '{print $2}'| sed ':a;N;$!ba;s/\n/ /g')
         NLINES=$(df -kP $WHAT | sed 1d |uniq | wc -l)
         COUNTER=0
         TOGETHER=0
@@ -123,7 +123,7 @@ sizecheck() {
                 LINE=$(df -kP $WHAT | grep -v "df"| sed 1d |uniq |awk '{print $3}'|sed "${COUNTER}q;d")
                 TOGETHER=$(expr $TOGETHER + $LINE)
         done
-        DEDSIZE=$(df -k /mnt/myoscopy | sed 1d |awk '{print $2}')
+        DEDSIZE=$(df -k /mnt/sosbkp | sed 1d |awk '{print $2}')
         if [ $TOGETHER -gt $DEDSIZE ]; then
                 if [ $FORCE == 0 ]; then
                         echo "WARNING: Destination is too small. Choose larger disk." >> $LOG
@@ -249,13 +249,13 @@ todisk() {
 	BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTDEDNAME |awk '{print $9}')
 	fstabedit
 	if [ -d /boot/grub2 ]; then grub2edit; fi
-	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
-        echo "topartition" > /var/tmp/myoscopy
-        echo $DEDREAL"1" >> /var/tmp/myoscopy
-	echo $DEDREAL"2" >> /var/tmp/myoscopy
-	umount /mnt/myoscopy$BOOTMP
-	umount /mnt/myoscopy
-	rm -r /mnt/myoscopy	
+	date +%F_%R > /mnt/sosbkp/.sosbkp_timestamp
+        echo "topartition" > /var/tmp/sosbkp
+        echo $DEDREAL"1" >> /var/tmp/sosbkp
+	echo $DEDREAL"2" >> /var/tmp/sosbkp
+	umount /mnt/sosbkp$BOOTMP
+	umount /mnt/sosbkp
+	rm -r /mnt/sosbkp	
 	exit 0
 }
 
@@ -273,38 +273,38 @@ topartition() {
         echo "============================" >> $LOG
         echo "MyOScopy Report" >> $LOG
         date >> $LOG
-	echo "topartition" > /var/tmp/myoscopy
-        echo $DEDREAL >> /var/tmp/myoscopy
+	echo "topartition" > /var/tmp/sosbkp
+        echo $DEDREAL >> /var/tmp/sosbkp
         checkmount
         patched
-        echo "Mounting backup device $DEDREAL to /mnt/myoscopy" >> $LOG
+        echo "Mounting backup device $DEDREAL to /mnt/sosbkp" >> $LOG
         mountded
 	sizecheck
         if [ $DEL == 1 ]; then
             echo "Clearing old OS backup." >> $LOG 2>&1
             echo -en "Clearing old OS backup........................ \033[s [IN PROGRESS]"; sleep 1
-            rm -rf /mnt/myoscopy/* >> $LOG 2>&1
+            rm -rf /mnt/sosbkp/* >> $LOG 2>&1
 	    echo -e "\033[u [DONE]        "; sleep 1
         fi
         echo "Running backup to $DEDREAL ." >> $LOG
         echo -ne "Running backup to $DEDREAL................... \033[s [IN PROGRESS]"
 	ADDITIONALDONOTCOPY=" --exclude=$BOOTMP/* "
         copy
-	date +%F_%R > /mnt/myoscopy/.myoscopy_timestamp
+	date +%F_%R > /mnt/sosbkp/.sosbkp_timestamp
         echo -e "\033[u [DONE]        "; sleep 1
 	fstabedit
         kernelbak
         if [ -d /boot/grub2 ]; then grub2edit; fi
         if [ -f /boot/grub/menu.lst ]; then grub01edit; fi
         if [ -f /etc/lilo.conf ]; then pliloedit; fi
-        echo "Unmounting $DEDREAL and removing /mnt/myoscopy" >> $LOG
+        echo "Unmounting $DEDREAL and removing /mnt/sosbkp" >> $LOG
 	echo -en "Unmounting $DEDREAL.......................... \033[s [IN PROGRESS]"; sleep 1
-        umount /mnt/myoscopy && sleep 2; rm -r /mnt/myoscopy >> $LOG 2>&1
+        umount /mnt/sosbkp && sleep 2; rm -r /mnt/sosbkp >> $LOG 2>&1
 	echo -e "\033[u [DONE]        "; sleep 1
         echo "DONE" >> $LOG
         sendlog
         sleep 1
-        rm -rf /mnt/myoscopy >> $LOG 2>&1
+        rm -rf /mnt/sosbkp >> $LOG 2>&1
         cat $LOG >> $LOGFILE
         shutdonwserver
         exit 0
@@ -315,21 +315,21 @@ fstabedit() {
         FSTYPE=$(df -T $DEDREAL | tail -1 | awk '{print $2}')
         if [ "$DEDTYPE" == "disk" ] ; then
                 if [ -n "$EFI" ]; then
-                        echo $DEDREAL"1         " $BOOTMP "     vfat    umask=0077,shortname=winnt   0 2" > /mnt/myoscopy/etc/fstab
+                        echo $DEDREAL"1         " $BOOTMP "     vfat    umask=0077,shortname=winnt   0 2" > /mnt/sosbkp/etc/fstab
                 else
-                        echo $DEDREAL"1         " $BOOTMP "     ext2  defaults   0 2" > /mnt/myoscopy/etc/fstab
+                        echo $DEDREAL"1         " $BOOTMP "     ext2  defaults   0 2" > /mnt/sosbkp/etc/fstab
                 fi
-		echo $DEDREAL"2         /  " $FSTYPE " defaults  1 1" >> /mnt/myoscopy/etc/fstab
+		echo $DEDREAL"2         /  " $FSTYPE " defaults  1 1" >> /mnt/sosbkp/etc/fstab
         elif [ "$DEDTYPE" == "partition" ] ; then
-                grep " /boot" /etc/fstab > /mnt/myoscopy/etc/fstab
-		echo $DEDREAL "       /  " $FSTYPE " defaults  1 1" >> /mnt/myoscopy/etc/fstab
+                grep " /boot" /etc/fstab > /mnt/sosbkp/etc/fstab
+		echo $DEDREAL "       /  " $FSTYPE " defaults  1 1" >> /mnt/sosbkp/etc/fstab
         fi
         #cp /etc/fstab /tmp/fstab
         egrep "$EXCEPTGREP" /etc/fstab > /tmp/fstab.temp
-        cat /tmp/fstab.temp >> /mnt/myoscopy/etc/fstab
+        cat /tmp/fstab.temp >> /mnt/sosbkp/etc/fstab
         echo "fstab on backup device has been edited:" >> $LOG 2>&1
         echo "" >> $LOG
-        cat /mnt/myoscopy/etc/fstab >> $LOG
+        cat /mnt/sosbkp/etc/fstab >> $LOG
         echo "" >> $LOG
         echo -e "\033[u [DONE]        "
 }
@@ -374,14 +374,14 @@ collectinfo() {
 }
 
 mountded() {
-        mkdir /mnt/myoscopy
+        mkdir /mnt/sosbkp
 	if [ "$DEDTYPE" == "partition" ] ; then
-        	mount $DEDREAL /mnt/myoscopy
+        	mount $DEDREAL /mnt/sosbkp
 	elif [ "$DEDTYPE" == "disk" ] ; then
-        	mkdir -p /mnt/myoscopy
-        	mount $DEDREAL"2" /mnt/myoscopy
-        	mkdir -p /mnt/myoscopy$BOOTMP
-        	mount $DEDREAL"1" /mnt/myoscopy$BOOTMP
+        	mkdir -p /mnt/sosbkp
+        	mount $DEDREAL"2" /mnt/sosbkp
+        	mkdir -p /mnt/sosbkp$BOOTMP
+        	mount $DEDREAL"1" /mnt/sosbkp$BOOTMP
 	fi
 }
 
@@ -392,7 +392,7 @@ copy() {
                 SEL=""
         fi
         DONOTCOPY=("${EXCLUDE[@]/%//*}")
-        rsync -aAv $SEL --human-readable --exclude=/dev/* --exclude=/sys/* --exclude=/run/* --exclude=/proc/* --exclude=/mnt/myoscopy $ADDITIONALDONOTCOPY ${DONOTCOPY[@]/#/--exclude=} / /mnt/myoscopy | sed '0,/^$/d' >> $LOG 2>&1
+        rsync -aAv $SEL --human-readable --exclude=/dev/* --exclude=/sys/* --exclude=/run/* --exclude=/proc/* --exclude=/mnt/sosbkp $ADDITIONALDONOTCOPY ${DONOTCOPY[@]/#/--exclude=} / /mnt/sosbkp | sed '0,/^$/d' >> $LOG 2>&1
 }
 
 kernelbak() {
@@ -406,42 +406,42 @@ kernelbak() {
 
 grub2edit() {
 	GRUBCFG=$(find /boot -name grub.cfg|grep grub.cfg)
-	DEDROOTREAL=$(df |grep "/mnt/myoscopy$" |awk '{print $1}')
-	if [ -f /etc/grub.d/50_myoscopy ]; then
+	DEDROOTREAL=$(df |grep "/mnt/sosbkp$" |awk '{print $1}')
+	if [ -f /etc/grub.d/50_sosbkp ]; then
 		echo "MyOScopy found in GRUB 2......................  [NO CHANGE]"
 		echo "MyOScopy found in GRUB 2." >> $LOG 2>&1
 	else
 		echo -en "Editing GRUB 2................................ \033[s [IN PROGRESS]"
 		echo "MyOScopy was not found in GRUB 2." >> $LOG 2>&1
 		source /etc/default/grub
-		echo '#!/bin/bash' > /etc/grub.d/50_myoscopy
-		echo 'exec tail -n +3 $0' >> /etc/grub.d/50_myoscopy
-		echo "#MyOScopy auto generated GRUB entry" >> /etc/grub.d/50_myoscopy
-		echo "menuentry 'Boot from MyOSCopy disk'  {" >> /etc/grub.d/50_myoscopy
-		echo "		load_video" >> /etc/grub.d/50_myoscopy
-		echo "		set gfxpayload=keep" >> /etc/grub.d/50_myoscopy
-		echo "		insmod gzio" >> /etc/grub.d/50_myoscopy
-		echo "		insmod part_msdos" >> /etc/grub.d/50_myoscopy
-		echo "		insmod ext2" >> /etc/grub.d/50_myoscopy
-		echo "		insmod lvm" >> /etc/grub.d/50_myoscopy
-		echo "		search --no-floppy --fs-uuid --set=root $BOOTUUID" >> /etc/grub.d/50_myoscopy
-		echo "		linux16 /vmlinuz-MyOScopy root=$DEDROOTREAL $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_myoscopy
-		echo "		initrd16 /initramfs-MyOScopy.img" >> /etc/grub.d/50_myoscopy
-		echo "}" >> /etc/grub.d/50_myoscopy
-		chmod a+x /etc/grub.d/50_myoscopy
+		echo '#!/bin/bash' > /etc/grub.d/50_sosbkp
+		echo 'exec tail -n +3 $0' >> /etc/grub.d/50_sosbkp
+		echo "#MyOScopy auto generated GRUB entry" >> /etc/grub.d/50_sosbkp
+		echo "menuentry 'Boot from MyOSCopy disk'  {" >> /etc/grub.d/50_sosbkp
+		echo "		load_video" >> /etc/grub.d/50_sosbkp
+		echo "		set gfxpayload=keep" >> /etc/grub.d/50_sosbkp
+		echo "		insmod gzio" >> /etc/grub.d/50_sosbkp
+		echo "		insmod part_msdos" >> /etc/grub.d/50_sosbkp
+		echo "		insmod ext2" >> /etc/grub.d/50_sosbkp
+		echo "		insmod lvm" >> /etc/grub.d/50_sosbkp
+		echo "		search --no-floppy --fs-uuid --set=root $BOOTUUID" >> /etc/grub.d/50_sosbkp
+		echo "		linux16 /vmlinuz-MyOScopy root=$DEDROOTREAL $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_sosbkp
+		echo "		initrd16 /initramfs-MyOScopy.img" >> /etc/grub.d/50_sosbkp
+		echo "}" >> /etc/grub.d/50_sosbkp
+		chmod a+x /etc/grub.d/50_sosbkp
 	        grub2-mkconfig -o $GRUBCFG &> /dev/null 
 		if [ "$DEDTYPE" == "disk" ]; then
-			mount --bind /dev /mnt/myoscopy/dev
-			mount --bind /sys /mnt/myoscopy/sys
-			mount --bind /run /mnt/myoscopy/run
-			mount --bind /proc /mnt/myoscopy/proc
-			chroot /mnt/myoscopy /bin/bash -c "dracut --force --regenerate-all"
+			mount --bind /dev /mnt/sosbkp/dev
+			mount --bind /sys /mnt/sosbkp/sys
+			mount --bind /run /mnt/sosbkp/run
+			mount --bind /proc /mnt/sosbkp/proc
+			chroot /mnt/sosbkp /bin/bash -c "dracut --force --regenerate-all"
 			grub2-install $DEDREAL &> /dev/null
-			cp -f $GRUBCFG /mnt/myoscopy$GRUBCFG
-			umount /mnt/myoscopy/dev
-			umount /mnt/myoscopy/sys
-			umount /mnt/myoscopy/run
-			umount /mnt/myoscopy/proc
+			cp -f $GRUBCFG /mnt/sosbkp$GRUBCFG
+			umount /mnt/sosbkp/dev
+			umount /mnt/sosbkp/sys
+			umount /mnt/sosbkp/run
+			umount /mnt/sosbkp/proc
 		fi
         	echo -e "\033[u [DONE]        "
         	echo "GRUB is configured." >> $LOG 2>&1
@@ -498,9 +498,9 @@ clear() {
         echo "Clearing MyOScopy" >> $LOG
         date >> $LOG
         killall rsync >> $LOG 2>&1
-        umount -l /mnt/myoscopy >> $LOG 2>&1
+        umount -l /mnt/sosbkp >> $LOG 2>&1
         sleep 1
-        rm -rf /mnt/myoscopy >> $LOG 2>&1
+        rm -rf /mnt/sosbkp >> $LOG 2>&1
         cat $LOG >> $LOGFILE
         echo -e "\033[u [DONE]        "; sleep 1
 }
@@ -536,25 +536,25 @@ ver() {
 
 show() {
         usercheck
-        if [ ! -f /var/tmp/myoscopy ]; then
-                echo "WARNING: File /var/tmp/myoscopy is missing. There are probably no backups."
+        if [ ! -f /var/tmp/sosbkp ]; then
+                echo "WARNING: File /var/tmp/sosbkp is missing. There are probably no backups."
                 exit 1
         fi
-	DED=$(cat /var/tmp/myoscopy)
-        mkdir /mnt/myoscopy 2> /dev/null
-        mount $DED /mnt/myoscopy 2> /dev/null
-        timestamp=`cat /mnt/myoscopy/.myoscopy_timestamp`
-        noofiles=`du /mnt/myoscopy/ |wc -l|tail -1`
+	DED=$(cat /var/tmp/sosbkp)
+        mkdir /mnt/sosbkp 2> /dev/null
+        mount $DED /mnt/sosbkp 2> /dev/null
+        timestamp=`cat /mnt/sosbkp/.sosbkp_timestamp`
+        noofiles=`du /mnt/sosbkp/ |wc -l|tail -1`
         echo "==================================================="
         echo "OS Backup created on $timestamp by $noofiles files"
         echo "==================================================="
-        ls -la /mnt/myoscopy
+        ls -la /mnt/sosbkp
         echo "==================================================="
-        df -hP /mnt/myoscopy
+        df -hP /mnt/sosbkp
         echo "==================================================="
-        umount /mnt/myoscopy 2> /dev/null
+        umount /mnt/sosbkp 2> /dev/null
         sleep 1
-        rm -rf /mnt/myoscopy >> $LOG 2>&1
+        rm -rf /mnt/sosbkp >> $LOG 2>&1
         exit 0
 }
 
@@ -566,7 +566,7 @@ help() {
         echo "Backup device is fully operational and can be booted in case of emergency."
         echo "You must be a root or to be in sudoers to be able to run MyOScopy."
         echo ""
-        echo "How to use: myoscopy [OPTIONS]... [-d|--to-disk=<partition>]"
+        echo "How to use: sosbkp [OPTIONS]... [-d|--to-disk=<partition>]"
         echo ""
         echo "Arguments:"
         echo "-d <partition>, --to-disk=<partition>	Start OSCopy to destionation"
@@ -584,9 +584,9 @@ help() {
         echo "-h, --help				This Help page"
         echo ""
         echo "Example:"
-        echo "myoscopy --to-disk=/dev/sdb1"
-        echo "myoscopy -Sxd /dev/sdb1"
-        echo "myoscopy -S -f -d /dev/mapper/backup_vg-backup_lv"
+        echo "sosbkp --to-disk=/dev/sdb1"
+        echo "sosbkp -Sxd /dev/sdb1"
+        echo "sosbkp -S -f -d /dev/mapper/backup_vg-backup_lv"
         echo ""
         exit 0
 }
