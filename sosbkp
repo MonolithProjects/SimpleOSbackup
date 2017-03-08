@@ -3,8 +3,8 @@
 #title           :SimpleOSbackup
 #description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :07-March-17
-version=1.0-alpha-1
+#date            :08-March-17
+version=1.0-alpha-2
 
 
 
@@ -163,14 +163,14 @@ patched() {
         SO=$(( ($(date --date=$TODAY +%s) - $(date --date=$LASTPATCH +%s) )/(60*60*24) ))
         if [ $SO -lt 7 ]; then
 		if [ $FORCE == 0 ]; then
-	                echo "WARNING: Server was patched only $SO days back! MyOScopy is stopped." >> $LOG
+	                echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
         	        echo "WARNING: Server was patched only $SO days back!.  [BACKUP INTERRUPTED]"
                		sendlog
                		cat $LOG >> $LOGFILE
 			clear
                		exit 1
 		else
-	                echo "WARNING: Server was patched only $SO days back! MyOScopy is stopped." >> $LOG
+	                echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
                         echo "WARNING: Server was patched only $SO days back!.  [FORCED TO CONITUE]"
 			sleep 1
 		fi
@@ -181,14 +181,14 @@ checkmount() {
         MOUNTED=$(grep $DED /proc/mounts)
         if [ -n "$MOUNTED" ]; then
 		if [ $FORCE == 0 ]; then
-	           	echo "WARNING: $DED is already mounted! MyOScopy is stopped." >> $LOG
+	           	echo "WARNING: $DED is already mounted! SOSbackup is stopped." >> $LOG
         	   	echo "WARNING: $DED is already mounted!........  [BACKUP INTERRUPTED]"
            		sendlog
            		cat $LOG >> $LOGFILE
 	   		clear
            		exit 1
 		else
-                        echo "WARNING: $DED is already mounted! MyOScopy is stopped." >> $LOG
+                        echo "WARNING: $DED is already mounted! SOSbackup is stopped." >> $LOG
                         echo "WARNING: $DED is already mounted!........  [FORCED TO CONITUE]"
 			sleep 1
 		fi
@@ -214,29 +214,29 @@ todisk() {
 	fi
         DEDBP="/tmp/dedbp"
         #2TB - 2199023255552B
-        if [ "$DEDSECTORS" -gt 4294967292 -o "$EFI" == "efi" ]; then
+        if [ "$DEDSECTORS" -gt 4294967292 -o "$EFI" == "yes" ]; then
                 DEDLAB="gpt"
         else
                 DEDLAB="dos"
         fi
-        echo "label: " $DEDLAB > $DEDBP
-        echo "device: " $DEDREAL >> $DEDBP
-        echo "unit: sectors" >> $DEDBP
+        #echo "label: " $DEDLAB > $DEDBP
+        #echo "device: " $DEDREAL >> $DEDBP
+        echo "unit: sectors" > $DEDBP
         echo "" >> $DEDBP
         if [ $DEDLAB == "dos" ]; then
-                echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=83, bootable" >> $DEDBP
-                echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", type=83" >> $DEDBP
+                echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", Id=83, bootable" >> $DEDBP
+                echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", Id=83" >> $DEDBP
         fi
         if [ $DEDLAB == "gpt" ]; then
-                if [ -n "$EFI" ]; then
-                        echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B" >> $DEDBP
+                if [ "$EFI" == "yes" ]; then
+                        echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", Id=C12A7328-F81F-11D2-BA4B-00A0C93EC93B" >> $DEDBP
                 else
-                        echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", type=21686148-6449-6E6F-744E-656564454649" >> $DEDBP #####OVERIT typ!!!
+                        echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", Id=21686148-6449-6E6F-744E-656564454649" >> $DEDBP #####OVERIT typ!!!
                 fi
-                echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", type=0FC63DAF-8483-4772-8E79-3D69D8477DE4" >> $DEDBP
+                echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", Id=0FC63DAF-8483-4772-8E79-3D69D8477DE4" >> $DEDBP
         fi
-        sfdisk -q $DEDREAL < $DEDBP >/dev/null
-        if [ -n "$EFI" ]; then
+        sfdisk --force -q $DEDREAL < $DEDBP >/dev/null
+        if [ "$EFI" == "yes" ]; then
                 mkfs.vfat -Fq $DEDREAL"1" >/dev/null
         else
                 mkfs.ext2 -Fq $DEDREAL"1" >/dev/null
@@ -271,7 +271,7 @@ topartition() {
         fi
         > $LOG
         echo "============================" >> $LOG
-        echo "MyOScopy Report" >> $LOG
+        echo "SOSbackup Report" >> $LOG
         date >> $LOG
 	echo "topartition" > /var/tmp/sosbkp
         echo $DEDREAL >> /var/tmp/sosbkp
@@ -314,7 +314,7 @@ fstabedit() {
         echo -en "Editing fstab on backup device................ \033[s [IN PROGRESS]"; sleep 1
         FSTYPE=$(df -T $DEDREAL | tail -1 | awk '{print $2}')
         if [ "$DEDTYPE" == "disk" ] ; then
-                if [ -n "$EFI" ]; then
+                if [ "$EFI" == "yes" ]; then
                         echo $DEDREAL"1         " $BOOTMP "     vfat    umask=0077,shortname=winnt   0 2" > /mnt/sosbkp/etc/fstab
                 else
                         echo $DEDREAL"1         " $BOOTMP "     ext2  defaults   0 2" > /mnt/sosbkp/etc/fstab
@@ -355,7 +355,7 @@ dedreal() {
 
 
 collectinfo() {
-        EFI=$(ls /boot/ |grep efi)
+        if [ -d /sys/firmware/efi ]; then EFI="yes" ; else EFI="no" ; fi
         DEDSECT=$(($(($TOGETHER * 1024)) / 512))
         DEDSECT=$(($(($DEDSECT / 100)) * 117))
         BYTSPERSECTOR=$(cat /sys/block/$DEDREALNAME/queue/hw_sector_size)
@@ -398,9 +398,9 @@ copy() {
 kernelbak() {
         echo "Copying current kernel." >> $LOG 2>&1
         echo -en "Copying current kernel........................ \033[s [IN PROGRESS]"; sleep 1
-        cp -f /boot/vmlinuz-`uname -r` /boot/vmlinuz-MyOScopy 2>/dev/null
-        cp -f /boot/vmlinuz-huge-`uname -r` /boot/vmlinuz-MyOScopy 2>/dev/null
-	cp -f /boot/initramfs-`uname -r`.img /boot/initramfs-MyOScopy.img 2>/dev/null
+        cp -f /boot/vmlinuz-`uname -r` /boot/vmlinuz-SOSbackup 2>/dev/null
+        cp -f /boot/vmlinuz-huge-`uname -r` /boot/vmlinuz-SOSbackup 2>/dev/null
+	cp -f /boot/initramfs-`uname -r`.img /boot/initramfs-SOSbackup.img 2>/dev/null
 	echo -e "\033[u [DONE]        "; sleep 1
 }
 
@@ -408,15 +408,15 @@ grub2edit() {
 	GRUBCFG=$(find /boot -name grub.cfg|grep grub.cfg)
 	DEDROOTREAL=$(df |grep "/mnt/sosbkp$" |awk '{print $1}')
 	if [ -f /etc/grub.d/50_sosbkp ]; then
-		echo "MyOScopy found in GRUB 2......................  [NO CHANGE]"
-		echo "MyOScopy found in GRUB 2." >> $LOG 2>&1
+		echo "SOSbackup found in GRUB 2......................  [NO CHANGE]"
+		echo "SOSbackup found in GRUB 2." >> $LOG 2>&1
 	else
 		echo -en "Editing GRUB 2................................ \033[s [IN PROGRESS]"
-		echo "MyOScopy was not found in GRUB 2." >> $LOG 2>&1
+		echo "SOSbackup was not found in GRUB 2." >> $LOG 2>&1
 		source /etc/default/grub
 		echo '#!/bin/bash' > /etc/grub.d/50_sosbkp
 		echo 'exec tail -n +3 $0' >> /etc/grub.d/50_sosbkp
-		echo "#MyOScopy auto generated GRUB entry" >> /etc/grub.d/50_sosbkp
+		echo "#SOSbackup auto generated GRUB entry" >> /etc/grub.d/50_sosbkp
 		echo "menuentry 'Boot from MyOSCopy disk'  {" >> /etc/grub.d/50_sosbkp
 		echo "		load_video" >> /etc/grub.d/50_sosbkp
 		echo "		set gfxpayload=keep" >> /etc/grub.d/50_sosbkp
@@ -425,8 +425,8 @@ grub2edit() {
 		echo "		insmod ext2" >> /etc/grub.d/50_sosbkp
 		echo "		insmod lvm" >> /etc/grub.d/50_sosbkp
 		echo "		search --no-floppy --fs-uuid --set=root $BOOTUUID" >> /etc/grub.d/50_sosbkp
-		echo "		linux16 /vmlinuz-MyOScopy root=$DEDROOTREAL $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_sosbkp
-		echo "		initrd16 /initramfs-MyOScopy.img" >> /etc/grub.d/50_sosbkp
+		echo "		linux16 /vmlinuz-SOSbackup root=$DEDROOTREAL $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_sosbkp
+		echo "		initrd16 /initramfs-SOSbackup.img" >> /etc/grub.d/50_sosbkp
 		echo "}" >> /etc/grub.d/50_sosbkp
 		chmod a+x /etc/grub.d/50_sosbkp
 	        grub2-mkconfig -o $GRUBCFG &> /dev/null 
@@ -451,37 +451,37 @@ grub2edit() {
 grub01edit() {
 	GRUBCFG=$(find /boot -name grub.conf|grep grub.conf)
 	if grep -q "$TITLE" $GRUBCFG ; then
-		echo "MyOScopy found in GRUB........................  [NO CHANGE]"
-        	echo "MyOScopy found in GRUB." >> $LOG 2>&1
+		echo "SOSbackup found in GRUB........................  [NO CHANGE]"
+        	echo "SOSbackup found in GRUB." >> $LOG 2>&1
 	else
                 echo "Editing GRUB 2................................ \033[s [IN PROGRESS]"
-                echo "MyOScopy was not found in GRUB 1.X." >> $LOG 2>&1
+                echo "SOSbackup was not found in GRUB 1.X." >> $LOG 2>&1
 		ROOTHD=$(cat $GRUBCFG |grep "root ("|grep -v "#"|head)
-		echo "#MyOScopy auto generated GRUB entry - START" >> $GRUBCFG
+		echo "#SOSbackup auto generated GRUB entry - START" >> $GRUBCFG
 		echo "title $TITLE" >> $GRUBCFG
 		echo "$ROOTHD" >> $GRUBCFG
 		AFTERKERNEL=$(cat /boot/grub/grub.conf |grep "kernel /vmlinuz-"| grep -v "#" |head -1| cut -d" " -f5-)
-		echo "		kernel /vmlinuz-MyOScopy ro root=$DED" $AFTERKERNEL >> $GRUBCFG
-		echo "		initrd /initramfs-MyOScopy.img " >> $GRUBCFG
-		echo "#MyOScopy auto generated GRUB entry - END" >> $GRUBCFG
+		echo "		kernel /vmlinuz-SOSbackup ro root=$DED" $AFTERKERNEL >> $GRUBCFG
+		echo "		initrd /initramfs-SOSbackup.img " >> $GRUBCFG
+		echo "#SOSbackup auto generated GRUB entry - END" >> $GRUBCFG
                 echo "GRUB is configured."
                 echo "GRUB is configured." >> $LOG 2>&1
 	fi
 }
 
 pliloedit() {
-	if grep -q "MyOScopy" /etc/lilo.conf ; then
-		echo "MyOScopy found in LILO........................  [NO CHANGE]"
-		echo "MyOScopy found in LILO." >> $LOG >&1
+	if grep -q "SOSbackup" /etc/lilo.conf ; then
+		echo "SOSbackup found in LILO........................  [NO CHANGE]"
+		echo "SOSbackup found in LILO." >> $LOG >&1
 	else
 		echo "Editing LILO..................................  [vvvv]"	
-		echo "MyOScopy was not found in LILO. Configuring ..." >> $LOG 2>&1
-		echo "#MyOScopy auto generated LILO entry - START" >> /etc/lilo.conf
-		echo "image = /boot/vmlinuz-MyOScopy" >> /etc/lilo.conf
+		echo "SOSbackup was not found in LILO. Configuring ..." >> $LOG 2>&1
+		echo "#SOSbackup auto generated LILO entry - START" >> /etc/lilo.conf
+		echo "image = /boot/vmlinuz-SOSbackup" >> /etc/lilo.conf
 		echo "	root = $DED" >> /etc/lilo.conf
-		echo "	label = MyOScopy" >> /etc/lilo.conf
+		echo "	label = SOSbackup" >> /etc/lilo.conf
 		echo "	read-only" >> /etc/lilo.conf
-		echo "#MyOScopy auto generated LILO entry - END" >> /etc/lilo.conf
+		echo "#SOSbackup auto generated LILO entry - END" >> /etc/lilo.conf
 		lilo 
 		echo "Editing LILO..................................  [DONE]"; sleep 1
 		echo "LILO is configured."  >> $LOG 2>&1
@@ -491,11 +491,11 @@ pliloedit() {
 # POST-PROCESSES:
 
 clear() {
-	echo -en "Clearing the MyOScopy state................... \033[s [IN PROGRESS]"
+	echo -en "Clearing the SOSbackup state................... \033[s [IN PROGRESS]"
         usercheck
         > $LOG
         echo "============================" >> $LOG
-        echo "Clearing MyOScopy" >> $LOG
+        echo "Clearing SOSbackup" >> $LOG
         date >> $LOG
         killall rsync >> $LOG 2>&1
         umount -l /mnt/sosbkp >> $LOG 2>&1
@@ -508,7 +508,7 @@ clear() {
 sendlog() {
           if [ $SENDEMAIL == 1 ]; then
             echo -en "Sending log to $EMAIL ....... \033[s [IN PROGRESS]"
-            cat -v $LOG | mailx -r $SMTPUSER -s "MyOScopy report" -S smtp=$SMTP -S smtp-use-starttls -S smtp-auth=login -S smtp-auth-user=$SMTPUSER -S smtp-auth-password=$SMTPPASS -S ssl-verify=ignore -S nss-config-dir=$NSSCONFIGDIR $EMAIL
+            cat -v $LOG | mailx -r $SMTPUSER -s "SOSbackup report" -S smtp=$SMTP -S smtp-use-starttls -S smtp-auth=login -S smtp-auth-user=$SMTPUSER -S smtp-auth-password=$SMTPPASS -S ssl-verify=ignore -S nss-config-dir=$NSSCONFIGDIR $EMAIL
 	    echo -e "\033[u [DONE]        "; sleep 1
           fi
 }
@@ -529,7 +529,7 @@ shutdonwserver() {
 # ADDITIONAL INFO:
 
 ver() {
-        echo "MyOScopy $version"
+        echo "SOSbackup $version"
         echo "Author: Michal Muransky"
         exit 0
 }
@@ -560,11 +560,11 @@ show() {
 
 help() {
         echo ""
-        echo "MyOScopy $version"
+        echo "SOSbackup $version"
         echo ""
         echo "This script is used to backup whole OS to a different single partition."
         echo "Backup device is fully operational and can be booted in case of emergency."
-        echo "You must be a root or to be in sudoers to be able to run MyOScopy."
+        echo "You must be a root or to be in sudoers to be able to run SOSbackup."
         echo ""
         echo "How to use: sosbkp [OPTIONS]... [-d|--to-disk=<partition>]"
         echo ""
@@ -579,7 +579,7 @@ help() {
         echo "					Keep in mind that rsync nees some free space for temporarry files."
         echo "-s, --show				Show last backup info"
         echo "-f, --force				Force backup and suppress all warnings."
-        echo "-v, --version				Show MyOScopy version"
+        echo "-v, --version				Show SOSbackup version"
         echo "    --debug				Debug mode"
         echo "-h, --help				This Help page"
         echo ""
