@@ -60,7 +60,7 @@ usercheck()  {
         wai=$(whoami 2>/dev/null)
         if [ $wai != root ]; then
 		echo "" 
-                echo 'USER CHECK DID NOT PASS: You must be a root to run MyOSCopy.'
+                echo 'USER CHECK DID NOT PASS: You must be a root to run SOSbackup.'
                 exit 1
         fi
 }
@@ -249,6 +249,7 @@ todisk() {
 	BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTDEDNAME |awk '{print $9}')
 	fstabedit
 	if [ -d /boot/grub2 ]; then grub2edit; fi
+	if [ -f /boot/grub/menu.lst ]; then grub01edit; fi
 	date +%F_%R > /mnt/sosbkp/.sosbkp_timestamp
         echo "topartition" > /var/tmp/sosbkp
         echo $DEDREAL"1" >> /var/tmp/sosbkp
@@ -417,7 +418,7 @@ grub2edit() {
 		echo '#!/bin/bash' > /etc/grub.d/50_sosbkp
 		echo 'exec tail -n +3 $0' >> /etc/grub.d/50_sosbkp
 		echo "#SOSbackup auto generated GRUB entry" >> /etc/grub.d/50_sosbkp
-		echo "menuentry 'Boot from MyOSCopy disk'  {" >> /etc/grub.d/50_sosbkp
+		echo "menuentry 'Boot from SOSbackup disk'  {" >> /etc/grub.d/50_sosbkp
 		echo "		load_video" >> /etc/grub.d/50_sosbkp
 		echo "		set gfxpayload=keep" >> /etc/grub.d/50_sosbkp
 		echo "		insmod gzio" >> /etc/grub.d/50_sosbkp
@@ -450,6 +451,14 @@ grub2edit() {
 
 grub01edit() {
 	GRUBCFG=$(find /boot -name grub.conf|grep grub.conf)
+	DEVMAP=$(find /boot -name device.map)
+	if grep -q "$DEDREAL" $DEVMAP ; then
+		echo "Backup defice was found in devices.map"
+	else
+		echo "Editing devices.map"
+		mv -f /mnt/sosbkp$DEVMAP /mnt/sosbkp$DEVMAP.bak; exit | grub --device-map=/mnt/sosbkp$DEVMAP > /dev/null
+		
+	fi
 	if grep -q "$TITLE" $GRUBCFG ; then
 		echo "SOSbackup found in GRUB........................  [NO CHANGE]"
         	echo "SOSbackup found in GRUB." >> $LOG 2>&1
@@ -464,6 +473,19 @@ grub01edit() {
 		echo "		kernel /vmlinuz-SOSbackup ro root=$DED" $AFTERKERNEL >> $GRUBCFG
 		echo "		initrd /initramfs-SOSbackup.img " >> $GRUBCFG
 		echo "#SOSbackup auto generated GRUB entry - END" >> $GRUBCFG
+                if [ "$DEDTYPE" == "disk" ]; then
+                        mount --bind /dev /mnt/sosbkp/dev
+                        mount --bind /sys /mnt/sosbkp/sys
+                        mount --bind /run /mnt/sosbkp/run
+                        mount --bind /proc /mnt/sosbkp/proc
+                        chroot /mnt/sosbkp /bin/bash -c "dracut --force /boot/initramfs-SOSbackup.img $(uname -r)"
+                        grub2-install $DEDREAL &> /dev/null
+                        cp -f $GRUBCFG /mnt/sosbkp$GRUBCFG
+                        umount /mnt/sosbkp/dev
+                        umount /mnt/sosbkp/sys
+                        umount /mnt/sosbkp/run
+                        umount /mnt/sosbkp/proc
+                fi
                 echo "GRUB is configured."
                 echo "GRUB is configured." >> $LOG 2>&1
 	fi
