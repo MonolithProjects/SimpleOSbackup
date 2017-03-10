@@ -479,7 +479,7 @@ grub01edit() {
                         mount --bind /run /mnt/sosbkp/run
                         mount --bind /proc /mnt/sosbkp/proc
                         chroot /mnt/sosbkp /bin/bash -c "dracut --force /boot/initramfs-SOSbackup.img $(uname -r)"
-                        grub2-install $DEDREAL &> /dev/null
+                        grub-install $DEDREAL &> /dev/null
                         cp -f $GRUBCFG /mnt/sosbkp$GRUBCFG
                         umount /mnt/sosbkp/dev
                         umount /mnt/sosbkp/sys
