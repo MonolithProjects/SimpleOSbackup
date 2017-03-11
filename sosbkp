@@ -451,13 +451,13 @@ grub2edit() {
 
 grub01edit() {
 	GRUBCFG=$(find /boot -name grub.conf|grep grub.conf)
+	DEDROOTREAL=$(df |grep "/mnt/sosbkp$" |awk '{print $1}')
 	DEVMAP=$(find /boot -name device.map)
 	if grep -q "$DEDREAL" $DEVMAP ; then
 		echo "Backup defice was found in devices.map"
 	else
 		echo "Editing devices.map"
 		mv -f /mnt/sosbkp$DEVMAP /mnt/sosbkp$DEVMAP.bak; exit | grub --device-map=/mnt/sosbkp$DEVMAP > /dev/null
-		
 	fi
 	if grep -q "$TITLE" $GRUBCFG ; then
 		echo "SOSbackup found in GRUB........................  [NO CHANGE]"
@@ -470,7 +470,7 @@ grub01edit() {
 		echo "title $TITLE" >> $GRUBCFG
 		echo "$ROOTHD" >> $GRUBCFG
 		AFTERKERNEL=$(cat /boot/grub/grub.conf |grep "kernel /vmlinuz-"| grep -v "#" |head -1| cut -d" " -f5-)
-		echo "		kernel /vmlinuz-SOSbackup ro root=$DED" $AFTERKERNEL >> $GRUBCFG
+		echo "		kernel /vmlinuz-SOSbackup ro root=$DEDROOTREAL" $AFTERKERNEL >> $GRUBCFG
 		echo "		initrd /initramfs-SOSbackup.img " >> $GRUBCFG
 		echo "#SOSbackup auto generated GRUB entry - END" >> $GRUBCFG
                 if [ "$DEDTYPE" == "disk" ]; then
@@ -478,8 +478,7 @@ grub01edit() {
                         mount --bind /sys /mnt/sosbkp/sys
                         mount --bind /run /mnt/sosbkp/run
                         mount --bind /proc /mnt/sosbkp/proc
-                        chroot /mnt/sosbkp /bin/bash -c "dracut --force /boot/initramfs-SOSbackup.img $(uname -r)"
-                        grub-install $DEDREAL &> /dev/null
+                        chroot /mnt/sosbkp /bin/bash -c "dracut --force /boot/initramfs-SOSbackup.img $(uname -r); grub-install $DEDREAL &> /dev/null"
                         cp -f $GRUBCFG /mnt/sosbkp$GRUBCFG
                         umount /mnt/sosbkp/dev
                         umount /mnt/sosbkp/sys
