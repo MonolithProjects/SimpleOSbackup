@@ -465,7 +465,8 @@ grub01edit() {
 	else
                 echo "Editing GRUB 2................................ \033[s [IN PROGRESS]"
                 echo "SOSbackup was not found in GRUB 1.X." >> $LOG 2>&1
-		ROOTHD=$(cat $GRUBCFG |grep "root ("|grep -v "#"|head)
+		if [ "$DEDTYPE" == "disk" ]; then ROOTHD=$(cat $GRUBCFG |grep "root ("|grep -v "#"|head); fi
+		if [ "$DEDTYPE" == "disk" ]; then ROOTHD=$(cat /mnt/sosbkp$DEVMAP |grep $DEDREAL| cut -c 1-4); ROOTHD="        root $ROOTHD,0)"; fi
 		echo "#SOSbackup auto generated GRUB entry - START" >> $GRUBCFG
 		echo "title $TITLE" >> $GRUBCFG
 		echo "$ROOTHD" >> $GRUBCFG
