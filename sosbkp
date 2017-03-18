@@ -1,19 +1,20 @@
 #!/bin/bash
 
 #title           :SimpleOSbackup
-#description     :This script is used for copy Linux OS to backup device.
 #author          :Michal Muransky
-#date            :08-March-17
-version=1.0-alpha-2
+#date            :18-March-17
+version=1.0-alpha-3
 
 
 
 # SETTINGS ##############################################################
+# Configuration file is located in /etc/sosbkp.conf 
 
-# Since version 2.0 the settings are located in /etc/sosbkp.conf 
 
 
 # DEFAULTS ##############################################################
+# Do not change these settings, unless you know what you are doing.
+# All these settings can be overwritten by specific option. Run "sosbkp -h" to see more.
 
 # Path to temporary log file
 LOG=/tmp/sosbkp.txt
@@ -35,6 +36,7 @@ FORCE=0
 
 # Copy SELinux permissions
 SELINUX=1
+
 
 
 # CODE ##################################################################
@@ -70,6 +72,7 @@ componentscheck() {
 		if [ ! -f /bin/mailx ]; then
 			echo ""
 			echo "COMPONENT CHECK DID NOT PASS: mailx is missing. Email report will be not sent!"
+			SENDEMAIL=0
 			sleep 2
 		fi
 	fi
@@ -84,18 +87,6 @@ componentscheck() {
 # WARNINGS:
 
 sizecheck()     {
-#        EXCEPTGREP=${EXCLUDE[@]/#/|}; EXCEPTGREP=$(echo "$EXCEPTGREP"| cut -c 2- |tr -d " \t\n\r" )
-#        WHAT=$(cat /etc/fstab |grep -vE "#|swap|SWAP|sosbkp" |grep -vE "$EXCEPTGREP" | grep -E "UUID|/dev" |awk '{print $2}'| sed ':a;N;$!ba;s/\n/ /g')
-#        NLINES=$(df -kP $WHAT | sed 1d |uniq | wc -l)
-#        COUNTER=0
-#        TOGETHER=0
-#        while [ $COUNTER -lt $NLINES ]; do
-#                let COUNTER=COUNTER+1
-#                LINE=$(df -kP $WHAT | grep -v "df"| sed 1d |uniq |awk '{print $3}'|sed "${COUNTER}q;d")
-#                TOGETHER=$(expr $TOGETHER + $LINE)
-#        done
-#	mkdir -p /mnt/sosbkp
-#       DEDSIZE=$(df -kP /mnt/sosbkp | sed 1d |awk '{print $2}')
         if [ $TOGETHER -gt $DEDSIZE ]; then
 		if [ $FORCE == 0 ]; then
                 	echo "WARNING: Destination is too small. Choose larger disk." >> $LOG
@@ -112,33 +103,6 @@ sizecheck()     {
         fi
 }
 
-sizecheckdisk() {
-        EXCEPTGREP=${EXCLUDE[@]/#/|}; EXCEPTGREP=$(echo "$EXCEPTGREP"| cut -c 2- |tr -d " \t\n\r" )
-        WHAT=$(cat /etc/fstab |grep -vE "#|boot|swap|SWAP|sosbkp" |grep -vE "$EXCEPTGREP" | grep -E "UUID|/dev" |awk '{print $2}'| sed ':a;N;$!ba;s/\n/ /g')
-        NLINES=$(df -kP $WHAT | sed 1d |uniq | wc -l)
-        COUNTER=0
-        TOGETHER=0
-        while [ $COUNTER -lt $NLINES ]; do
-                let COUNTER=COUNTER+1
-                LINE=$(df -kP $WHAT | grep -v "df"| sed 1d |uniq |awk '{print $3}'|sed "${COUNTER}q;d")
-                TOGETHER=$(expr $TOGETHER + $LINE)
-        done
-        DEDSIZE=$(df -kP /mnt/sosbkp | sed 1d |awk '{print $2}')
-        if [ $TOGETHER -gt $DEDSIZE ]; then
-                if [ $FORCE == 0 ]; then
-                        echo "WARNING: Destination is too small. Choose larger disk." >> $LOG
-                        echo "WARNING: Destination is too small.............  [BACKUP INTERRUPTED]"
-                        sendlog
-                        cat $LOG >> $LOGFILE
-                        clear
-                        exit 1
-                else
-                        echo "WARNING: Destination is too small. Forced to continue." >> $LOG
-                        echo "WARNING: Destination is too small.............  [FORCED TO CONITUE]"
-                        sleep 1
-                fi
-        fi
-}
 
 patched() {
         if [ -f /boot/vmlinuz-`uname -r` ]; then 
@@ -238,9 +202,21 @@ todisk() {
         if [ "$EFI" == "yes" ]; then
                 mkfs.vfat -Fq $DEDREAL"1" >/dev/null
         else
-                mkfs.ext2 -Fq $DEDREAL"1" >/dev/null
+		if [[ $SODBOOTFS == "ext"* ]]; then
+			mkfs.$SODBOOTFS -Fq $DEDREAL"1" >/dev/null
+		elif [[ $SODBOOTFS == "xfs" ]]; then
+			mkfs.$SODBOOTFS -fq $DEDREAL"1" >/dev/null
+		else
+			mkfs.$SODBOOTFS -Fq $DEDREAL"1" >/dev/null
+		fi
         fi
-        mkfs.ext4 -Fq $DEDREAL"2" >/dev/null
+	if [[ $SODROOTFS == "ext"* ]]; then
+        	mkfs.$SODROOTFS -Fq $DEDREAL"2" >/dev/null
+	elif [[ $SODROOTFS == "xfs" ]]; then
+		mkfs.$SODROOTFS -fq $DEDREAL"2" >/dev/null
+	else
+		mkfs.ext4 -Fq $DEDREAL"2" >/dev/null
+	fi
 	mountded
 	kernelbak
 	copy
@@ -309,17 +285,17 @@ topartition() {
 
 fstabedit() {
         echo -en "Editing fstab on backup device................ \033[s [IN PROGRESS]"; sleep 1
-        FSTYPE=$(df -T $DEDREAL | tail -1 | awk '{print $2}')
+        #FSTYPE=$(df -T $DEDREAL | tail -1 | awk '{print $2}')
         if [ "$DEDTYPE" == "disk" ] ; then
                 if [ "$EFI" == "yes" ]; then
                         echo $DEDREAL"1         " $BOOTMP "     vfat    umask=0077,shortname=winnt   0 2" > /mnt/sosbkp/etc/fstab
                 else
-                        echo $DEDREAL"1         " $BOOTMP "     ext2  defaults   0 2" > /mnt/sosbkp/etc/fstab
+                        echo $DEDREAL"1         " $BOOTMP "     $SODBOOTFS  defaults   0 2" > /mnt/sosbkp/etc/fstab
                 fi
-		echo $DEDREAL"2         /  " $FSTYPE " defaults  1 1" >> /mnt/sosbkp/etc/fstab
+		echo $DEDREAL"2         /  " $SODROOTFS " defaults  1 1" >> /mnt/sosbkp/etc/fstab
         elif [ "$DEDTYPE" == "partition" ] ; then
                 grep " /boot" /etc/fstab > /mnt/sosbkp/etc/fstab
-		echo $DEDREAL "       /  " $FSTYPE " defaults  1 1" >> /mnt/sosbkp/etc/fstab
+		echo $DEDREAL "       /  " $SODROOTFS " defaults  1 1" >> /mnt/sosbkp/etc/fstab
         fi
         #cp /etc/fstab /tmp/fstab
         egrep "$EXCEPTGREP" /etc/fstab > /tmp/fstab.temp
@@ -345,6 +321,8 @@ dedreal() {
         DEDREALNAME=$(echo $DEDREAL | sed 's:/dev/::g')
         if [ "${DEDREALNAME: -1}" -eq "${DEDREALNAME: -1}" ] &> /dev/null ; then
                 DEDTYPE="partition"
+	elif [[ $DEDREALNAME == "mapper"* ]]; then
+		DEDTYPE="partition"
         else
                 DEDTYPE="disk"
         fi
@@ -352,6 +330,10 @@ dedreal() {
 
 
 collectinfo() {
+	SODBOOT=xxxxxx
+	SODROOT=xxxxxx
+	SODBOOTFS=$(df -T /boot | grep -v Type |awk '{print $2}')
+	SODROOTFS=$(df -T / | grep -v Type |awk '{print $2}')
         EXCEPTGREP=${EXCLUDE[@]/#/|}; EXCEPTGREP=$(echo "$EXCEPTGREP"| cut -c 2- |tr -d " \t\n\r" )
         WHAT=$(cat /etc/fstab |grep -vE "#|swap|SWAP|sosbkp" |grep -vE "$EXCEPTGREP" | grep -E "UUID|/dev" |awk '{print $2}'| sed ':a;N;$!ba;s/\n/ /g')
         NLINES=$(df -kP $WHAT | sed 1d |uniq | wc -l)
@@ -421,7 +403,7 @@ grub2edit() {
 	GRUBCFG=$(find /boot -name grub.cfg|grep grub.cfg)
 	DEDROOTREAL=$(df |grep "/mnt/sosbkp$" |awk '{print $1}')
 	if [ -f /etc/grub.d/50_sosbkp ]; then
-		echo "SOSbackup found in GRUB 2......................  [NO CHANGE]"
+		echo "SOSbackup found in GRUB 2.....................  [NO CHANGE]"
 		echo "SOSbackup found in GRUB 2." >> $LOG 2>&1
 	else
 		echo -en "Editing GRUB 2................................ \033[s [IN PROGRESS]"
@@ -436,9 +418,10 @@ grub2edit() {
 		echo "		insmod gzio" >> /etc/grub.d/50_sosbkp
 		echo "		insmod part_msdos" >> /etc/grub.d/50_sosbkp
 		echo "		insmod ext2" >> /etc/grub.d/50_sosbkp
+		if [ $SODROOTFS == "xfs" -o $SODBOOTFS == "xfs" ]; then echo "		insmod xfs" >> /etc/grub.d/50_sosbkp ; fi
 		echo "		insmod lvm" >> /etc/grub.d/50_sosbkp
 		echo "		search --no-floppy --fs-uuid --set=root $BOOTUUID" >> /etc/grub.d/50_sosbkp
-		echo "		linux16 /vmlinuz-SOSbackup root=$DEDROOTREAL $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_sosbkp
+		echo "		linux16 /vmlinuz-SOSbackup root=$DEDROOTREAL ro $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_sosbkp
 		echo "		initrd16 /initramfs-SOSbackup.img" >> /etc/grub.d/50_sosbkp
 		echo "}" >> /etc/grub.d/50_sosbkp
 		chmod a+x /etc/grub.d/50_sosbkp
@@ -474,10 +457,10 @@ grub01edit() {
 		fi
 	fi
 	if grep -q "$TITLE" $GRUBCFG ; then
-		echo "SOSbackup found in GRUB........................  [NO CHANGE]"
+		echo "SOSbackup found in GRUB.......................  [NO CHANGE]"
         	echo "SOSbackup found in GRUB." >> $LOG 2>&1
 	else
-                echo "Editing GRUB 2................................ \033[s [IN PROGRESS]"
+                echo -en "Editing GRUB ................................. \033[s [IN PROGRESS]"
                 echo "SOSbackup was not found in GRUB 1.X." >> $LOG 2>&1
 		if [ "$DEDTYPE" == "partition" ]; then ROOTHD=$(cat $GRUBCFG |grep "root ("|grep -v "#"|head -1); fi
 		if [ "$DEDTYPE" == "disk" ]; then ROOTHD=$(cat /mnt/sosbkp$DEVMAP |grep $DEDREAL| cut -c 1-4); ROOTHD="        root $ROOTHD,0)"; fi
@@ -500,7 +483,7 @@ grub01edit() {
                         umount /mnt/sosbkp/run
                         umount /mnt/sosbkp/proc
                 fi
-                echo "GRUB is configured."
+		echo -e "\033[u [DONE]        "
                 echo "GRUB is configured." >> $LOG 2>&1
 	fi
 }
