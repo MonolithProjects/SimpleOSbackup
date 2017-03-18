@@ -37,6 +37,8 @@ FORCE=0
 # Copy SELinux permissions
 SELINUX=1
 
+# Messages width
+MSGWIDTH=50
 
 
 # CODE ##################################################################
@@ -54,32 +56,42 @@ SMTPUSER=""
 SMTPPASS=""
 NSSCONFIGDIR=""
 ADDITIONALDONOTCOPY=""
+dots="..........................................."
+dots=$dots$dots$dots
 source $SETTINGS
 
 # MANDATORY CHECKS:
 
 usercheck()  {
         wai=$(whoami 2>/dev/null)
+	printf "%.${MSGWIDTH}s" "Checking the user$dots"
+	printf "\033[s%s" "[PROCESSING]"; sleep 1
         if [ $wai != root ]; then
-		echo "" 
-                echo 'USER CHECK DID NOT PASS: You must be a root to run SOSbackup.'
+		printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
+                printf "%s\n" "INFO: You must be a root."
                 exit 1
         fi
+	printf "\033[u%s\n" "[OK]         "
 }
 
 componentscheck() {
-	if [ ! -f /usr/bin/mailx ]; then
-		if [ ! -f /bin/mailx ]; then
-			echo ""
-			echo "COMPONENT CHECK DID NOT PASS: mailx is missing. Email report will be not sent!"
-			SENDEMAIL=0
-			sleep 2
-		fi
+        printf "%.${MSGWIDTH}s" "Checking mailx$dots"
+        printf "\033[s%s" "[PROCESSING]"; sleep 1
+	if [ ! -f /usr/bin/mailx -o ! -f /bin/mailx ]; then
+		printf "\033[u%s\n" "[MISSING]       "
+		SENDEMAIL=0
+
+	else
+		printf "\033[u%s\n" "[OK]          "
 	fi
+        printf "%.${MSGWIDTH}s" "Checking rsync$dots"
+        printf "\033[s%s" "[PROCESSING]"; sleep 1
 	if [ ! -f /usr/bin/rsync ]; then
-		echo "COMPONENT CHECK DID NOT PASS: rsync is missing. Please install it first!"
-		sleep 2
+		printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
+		printf "%s\n" "INFO: Please install rsync."
 		exit 1
+	else
+		printf "\033[u%s\n" "[OK]          "
 	fi
 }
 
@@ -87,24 +99,28 @@ componentscheck() {
 # WARNINGS:
 
 sizecheck()     {
+	printf "%.${MSGWIDTH}s" "Checking the destionation $DEDTYPE size$dots"
+	printf "\033[s%s" "[PROCESSING]"; sleep 1
+	PRINTSTATE="[OK]             "
         if [ $TOGETHER -gt $DEDSIZE ]; then
 		if [ $FORCE == 0 ]; then
-                	echo "WARNING: Destination is too small. Choose larger disk." >> $LOG
-			echo "WARNING: Destination is too small.............  [BACKUP INTERRUPTED]"
+			printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
 			sendlog
 			cat $LOG >> $LOGFILE
                 	clear
                 	exit 1
 		else
-                        echo "WARNING: Destination is too small. Forced to continue." >> $LOG
-                        echo "WARNING: Destination is too small.............  [FORCED TO CONITUE]"
+			PRINTSTATE="[ERROR - FORCED TO CONITUE]       "
 			sleep 1
 		fi
         fi
+	printf "\033[u%s\n" "$PRINTSTATE"
 }
 
 
 patched() {
+	printf "%.${MSGWIDTH}s" "Checkink last patching date$dots"
+	printf "\033[s%s" "[PROCESSING]"; sleep 1
         if [ -f /boot/vmlinuz-`uname -r` ]; then 
 		LASTPATCH=$(stat -c %z /boot/vmlinuz-`uname -r` |cut -d ' ' -f 1 |tr -d "-")
        	elif [ -f /boot/vmlinuz-`uname -r`-generic ]; then
@@ -112,50 +128,56 @@ patched() {
 	elif [ -f /boot/vmlinuz-generic-`uname -r` ]; then
 		LASTPATCH=$(stat -c %z /boot/vmlinuz-generic-`uname -r` |cut -d ' ' -f 1 |tr -d "-")
 	else
-	  echo "WARNING: Unable to determine last patching date. You have 15 seconds to interrupt the backup (Ctrl+C)."
-	  #sleep 15
-	  secs=15
-	  while [ $secs -gt 0 ]; do
-   		echo -ne "-- $secs --\033[0K\r"
-   		sleep 1
-   	  	: $((secs--))
-	  done
-	  return   	
+		printf "\033[u%s\n" "[ERROR]       "
+	secs=15
+	printf "%s" "INFO: You have $secs to interrupt (Ctrl+C)."
+        	while [ $secs -gt 0 ]; do
+                	printf "\r%s" "INFO: You have $secs seconds to interrupt (Ctrl+C)."
+                	sleep 1
+                	: $((secs--))
+		done
+		printf "\r%s\n" "INFO: You have 0 seconds to interrupt (Ctrl+C)."
+          	return
 	fi 
 	TODAY=$(date +%Y%m%d)
         SO=$(( ($(date --date=$TODAY +%s) - $(date --date=$LASTPATCH +%s) )/(60*60*24) ))
-        if [ $SO -lt 7 ]; then
+	if [ $SO -lt 7 ]; then
 		if [ $FORCE == 0 ]; then
-	                echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
-        	        echo "WARNING: Server was patched only $SO days back!.  [BACKUP INTERRUPTED]"
-               		sendlog
-               		cat $LOG >> $LOGFILE
+			printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
+			echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
+	     		sendlog
+	       		cat $LOG >> $LOGFILE
 			clear
                		exit 1
 		else
+			printf "\033[u%s\n" "[ERROR - FORCED TO CONITUE]       "
 	                echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
-                        echo "WARNING: Server was patched only $SO days back!.  [FORCED TO CONITUE]"
 			sleep 1
 		fi
         fi
+	printf "\033[u%s\n" "[OK]          "
 }
 
 checkmount() {
+        printf "%.${MSGWIDTH}s" "Checkink if the destination is already mounted$dots"
+        printf "\033[s%s" "[PROCESSING]"; sleep 1
+	PRINTSTATE="[OK]            "
         MOUNTED=$(grep $DED /proc/mounts)
         if [ -n "$MOUNTED" ]; then
 		if [ $FORCE == 0 ]; then
+			printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
 	           	echo "WARNING: $DED is already mounted! SOSbackup is stopped." >> $LOG
-        	   	echo "WARNING: $DED is already mounted!........  [BACKUP INTERRUPTED]"
            		sendlog
            		cat $LOG >> $LOGFILE
 	   		clear
            		exit 1
 		else
+			PRINTSTATE="[ERROR - FORCED TO CONITUE]       "
                         echo "WARNING: $DED is already mounted! SOSbackup is stopped." >> $LOG
-                        echo "WARNING: $DED is already mounted!........  [FORCED TO CONITUE]"
 			sleep 1
 		fi
         fi
+	printf "\033[u%s\n" "$PRINTSTATE"
 }
 
 
