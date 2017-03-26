@@ -2,7 +2,7 @@
 
 #title           :SimpleOSbackup
 #author          :Michal Muransky
-#date            :19-March-17
+#date            :26-March-17
 version=1.0-alpha-3
 
 
@@ -62,6 +62,7 @@ source $SETTINGS
 
 # MANDATORY CHECKS:
 
+# Check if the user has root rights
 usercheck()  {
         wai=$(whoami 2>/dev/null)
 	printf "%.${MSGWIDTH}s" "Checking the user$dots"
@@ -74,6 +75,7 @@ usercheck()  {
 	printf "\033[u%s\n" "[OK]         "
 }
 
+# Look for rsync and mailx (if the mailx is missing, SOSbackup will continue but will not send a report via email)
 componentscheck() {
         printf "%.${MSGWIDTH}s" "Checking mailx$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
@@ -98,6 +100,7 @@ componentscheck() {
 
 # WARNINGS:
 
+# Compare the destination (disk or partition) size with the source
 sizecheck()     {
 	printf "%.${MSGWIDTH}s" "Checking the destionation $DEDTYPE size$dots"
 	printf "\033[s%s" "[PROCESSING]"; sleep 1
@@ -106,7 +109,7 @@ sizecheck()     {
 		if [ $FORCE == 0 ]; then
 			printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
 			sendlog
-			cat $LOG >> $LOGFILE
+			cat $TEMPLOG >> $LOGFILE
                 	clear
                 	exit 1
 		else
@@ -117,7 +120,7 @@ sizecheck()     {
 	printf "\033[u%s\n" "$PRINTSTATE"
 }
 
-
+# Check if the current running kernel was installed less than 7 days ago
 patched() {
 	printf "%.${MSGWIDTH}s" "Checkink last patching date$dots"
 	printf "\033[s%s" "[PROCESSING]"; sleep 1
@@ -147,7 +150,7 @@ patched() {
 			printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
 			echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
 	     		sendlog
-	       		cat $LOG >> $LOGFILE
+	       		cat $TEMPLOG >> $LOGFILE
 			clear
                		exit 1
 		else
@@ -159,6 +162,7 @@ patched() {
 	printf "\033[u%s\n" "$PRINTSTATE"
 }
 
+# Check if the destination was mounted before SOSbackup start
 checkmount() {
         printf "%.${MSGWIDTH}s" "Checkink if the destination is already mounted$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
@@ -169,7 +173,7 @@ checkmount() {
 			printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
 	           	echo "WARNING: $DED is already mounted! SOSbackup is stopped." >> $LOG
            		sendlog
-           		cat $LOG >> $LOGFILE
+           		cat $TEMPLOG >> $LOGFILE
 	   		clear
            		exit 1
 		else
@@ -184,7 +188,7 @@ checkmount() {
 
 # MAIN PROCESSES:
 
-
+# Create backup to disk
 todisk() {
 	usercheck
 	componentscheck
@@ -220,7 +224,7 @@ todisk() {
                 if [ "$EFI" == "yes" ]; then
                         echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", Id=C12A7328-F81F-11D2-BA4B-00A0C93EC93B" >> $DEDBP
                 else
-                        echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", Id=21686148-6449-6E6F-744E-656564454649" >> $DEDBP #####OVERIT typ!!!
+                        echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", Id=21686148-6449-6E6F-744E-656564454649" >> $DEDBP
                 fi
                 echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", Id=0FC63DAF-8483-4772-8E79-3D69D8477DE4" >> $DEDBP
         fi
@@ -267,6 +271,7 @@ todisk() {
 	exit 0
 }
 
+# Create backup to partition
 topartition() {
         usercheck
 	componentscheck
@@ -291,10 +296,10 @@ topartition() {
         echo $DEDREAL >> /var/tmp/sosbkp
         patched
         if [ $DEL == 1 ]; then
-		echo "Clearing old OS backup." >> $LOG 2>&1
+		echo "Clearing old OS backup." >> $TEMPLOG 2>&1
 		printf "%.${MSGWIDTH}s" "Clearing old OS backup$dots"
 		printf "\033[s%s" "[PROCESSING]"; sleep 1
-		rm -rf /mnt/sosbkp/* >> $LOG 2>&1
+		rm -rf /mnt/sosbkp/* >> $TEMPLOG 2>&1
 		printf "\033[u%s\n" "[DONE]         "
         fi
 	ADDITIONALDONOTCOPY=" --exclude=$BOOTMP/* "
@@ -308,21 +313,24 @@ topartition() {
 	printf "%.${MSGWIDTH}s" "Unmounting the backup device $dots"
 	printf "\033[s%s" "[PROCESSING]"; sleep 1
         echo "Unmounting $DEDREAL and removing /mnt/sosbkp" >> $LOG
-        umount /mnt/sosbkp > /dev/null && sleep 2; rm -r /mnt/sosbkp >> $LOG 2>&1
+        umount /mnt/sosbkp > /dev/null && sleep 2; rm -r /mnt/sosbkp >> $TEMPLOG 2>&1
 	printf "\033[u%s\n" "[DONE]         "
         echo "DONE" >> $LOG
         sendlog
         sleep 1
-        rm -rf /mnt/sosbkp >> $LOG 2>&1
-        cat $LOG >> $LOGFILE
+        rm -rf /mnt/sosbkp >> $TEMPLOG 2>&1
+        cat $TEMPLOG >> $LOGFILE
         shutdonwserver
         exit 0
 }
 
+
+# SUPPORTING FUNCTIONS
+
+# Edit fstab
 fstabedit() {
 	printf "%.${MSGWIDTH}s" "Editing fstab on backup device$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
-        #FSTYPE=$(df -T $DEDREAL | tail -1 | awk '{print $2}')
         if [ "$DEDTYPE" == "disk" ] ; then
                 if [ "$EFI" == "yes" ]; then
                         echo $DEDREAL"1         " $BOOTMP "     vfat    umask=0077,shortname=winnt   0 2" > /mnt/sosbkp/etc/fstab
@@ -334,16 +342,16 @@ fstabedit() {
                 grep " /boot" /etc/fstab > /mnt/sosbkp/etc/fstab
 		echo $DEDREAL "       /  " $SODROOTFS " defaults  1 1" >> /mnt/sosbkp/etc/fstab
         fi
-        #cp /etc/fstab /tmp/fstab
         egrep "$EXCEPTGREP" /etc/fstab > /tmp/fstab.temp
         cat /tmp/fstab.temp >> /mnt/sosbkp/etc/fstab
-        echo "fstab on backup device has been edited:" >> $LOG 2>&1
+        echo "fstab on backup device has been edited:" >> $TEMPLOG 2>&1
         echo "" >> $LOG
         cat /mnt/sosbkp/etc/fstab >> $LOG
         echo "" >> $LOG
         printf "\033[u%s\n" "[DONE]         "
 }
 
+# Real path to destination
 dedreal() {
         if [ -b $DED ]; then
                 DEDREAL=$DED
@@ -353,7 +361,7 @@ dedreal() {
            echo "Destination $DEDREAL not found!" >> $LOG
            printf "\033[u%s\n" "[ERROR]       "
 	   printf "%s" "INFO: Destination $DEDREAL was not found."
-           cat $LOG >> $LOGFILE
+           cat $TEMPLOG >> $LOGFILE
            exit 1
         fi
         DEDREALNAME=$(echo $DEDREAL | sed 's:/dev/::g')
@@ -366,32 +374,10 @@ dedreal() {
         fi
 }
 
-
+# Collect information
 collectinfo() {
         printf "%.${MSGWIDTH}s" "Collectiong information$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
-
-	#if [ -b $DED ]; then
-        #        DEDREAL=$DED
-        #elif [ -b /dev/$DED ]; then
-        #        DEDREAL=/dev/$DED
-        #else
-        #   echo "Destination $DEDREAL not found!" >> $LOG
-        #   printf "\033[u%s\n" "[ERROR]       "
-        #   printf "%s" "INFO: Destination $DEDREAL was not found."
-        #   cat $LOG >> $LOGFILE
-        #   exit 1
-        #fi
-        #DEDREALNAME=$(echo $DEDREAL | sed 's:/dev/::g')
-        #if [ "${DEDREALNAME: -1}" -eq "${DEDREALNAME: -1}" ] &> /dev/null ; then
-        #        DEDTYPE="partition"
-        #elif [[ $DEDREALNAME == "mapper"* ]]; then
-        #        DEDTYPE="partition"
-        #else
-        #        DEDTYPE="disk"
-        #fi
-	SODBOOT=xxxxxx
-	SODROOT=xxxxxx
 	SODBOOTFS=$(df -T /boot | grep -v Type |awk '{print $2}')
 	SODROOTFS=$(df -T / | grep -v Type |awk '{print $2}')
         EXCEPTGREP=${EXCLUDE[@]/#/|}; EXCEPTGREP=$(echo "$EXCEPTGREP"| cut -c 2- |tr -d " \t\n\r" )
@@ -425,10 +411,11 @@ collectinfo() {
         BOOTFSSIZE=$(cat /sys/block/$SODREALNAME/$BOOTPARTNAME/size)
         DEDSECTORS=$(cat /sys/block/$SODREALNAME/size)
 	if [ "$DEDTYPE" == "partition" ] ; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTNAME |awk '{print $9}'); fi
-#	if [ "$DEDTYPE" == "disk" ] ; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTDEDNAME |awk '{print $9}'); fi ### Can not be collected before part creation
+	# BOOTUUID for disk is in the function todisk
 	printf "\033[u%s\n" "[DONE]       "
 }
 
+# Mount destination
 mountded() {
         printf "%.${MSGWIDTH}s" "Mounting backup device$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
@@ -443,6 +430,7 @@ mountded() {
 	printf "\033[u%s\n" "[DONE]       "
 }
 
+# Copy the data
 copy() {
 	printf "%.${MSGWIDTH}s" "Running backup$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
@@ -452,20 +440,22 @@ copy() {
                 SEL=""
         fi
         DONOTCOPY=("${EXCLUDE[@]/%//*}")
-        rsync -aAv $SEL --human-readable --exclude=/dev/* --exclude=/sys/* --exclude=/run/* --exclude=/proc/* --exclude=/mnt/sosbkp $ADDITIONALDONOTCOPY ${DONOTCOPY[@]/#/--exclude=} / /mnt/sosbkp | sed '0,/^$/d' >> $LOG 2>&1
+        rsync -aAv $SEL --human-readable --exclude=/dev/* --exclude=/sys/* --exclude=/run/* --exclude=/proc/* --exclude=/mnt/sosbkp $ADDITIONALDONOTCOPY ${DONOTCOPY[@]/#/--exclude=} / /mnt/sosbkp | sed '0,/^$/d' >> $TEMPLOG 2>&1
 	printf "\033[u%s\n" "[DONE]       "
 }
 
+# Backup the current kernel and rename (replace kernel version in the name with a word SOSbackup)
 kernelbak() {
 	printf "%.${MSGWIDTH}s" "Creating copy of current kernel$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
-        echo "Copying current kernel." >> $LOG 2>&1
+        echo "Copying current kernel." >> $TEMPLOG 2>&1
         cp -f /boot/vmlinuz-`uname -r` /boot/vmlinuz-SOSbackup 2>/dev/null
         cp -f /boot/vmlinuz-huge-`uname -r` /boot/vmlinuz-SOSbackup 2>/dev/null
 	cp -f /boot/initramfs-`uname -r`.img /boot/initramfs-SOSbackup.img 2>/dev/null
 	printf "\033[u%s\n" "[DONE]       "
 }
 
+# Edit GRUB 2
 grub2edit() {
 	printf "%.${MSGWIDTH}s" "Editing Grub 2$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
@@ -473,9 +463,9 @@ grub2edit() {
 	DEDROOTREAL=$(df |grep "/mnt/sosbkp$" |awk '{print $1}')
 	if [ -f /etc/grub.d/50_sosbkp ]; then
 		PRINTSTATE="[NO CHANGE]       "
-		echo "SOSbackup found in GRUB 2." >> $LOG 2>&1
+		echo "SOSbackup found in GRUB 2." >> $TEMPLOG 2>&1
 	else
-		echo "SOSbackup was not found in GRUB 2." >> $LOG 2>&1
+		echo "SOSbackup was not found in GRUB 2." >> $TEMPLOG 2>&1
 		source /etc/default/grub
 		echo '#!/bin/bash' > /etc/grub.d/50_sosbkp
 		echo 'exec tail -n +3 $0' >> /etc/grub.d/50_sosbkp
@@ -508,11 +498,12 @@ grub2edit() {
 			umount /mnt/sosbkp/proc
 		fi
 		PRINTSTATE="[NO CHANGE]       "
-        	echo "GRUB is configured." >> $LOG 2>&1
+        	echo "GRUB is configured." >> $TEMPLOG 2>&1
 	fi
 	printf "\033[u%s\n" "$PRINTSTATE"
 }
 
+# Edit Legacy GRUB
 grub01edit() {
         printf "%.${MSGWIDTH}s" "Editing Grub$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
@@ -529,9 +520,9 @@ grub01edit() {
 	fi
 	if grep -q "$TITLE" $GRUBCFG ; then
 		PRINTSTATE="[NO CHANGE]       "
-        	echo "SOSbackup found in GRUB." >> $LOG 2>&1
+        	echo "SOSbackup found in GRUB." >> $TEMPLOG 2>&1
 	else
-                echo "SOSbackup was not found in GRUB 1.X." >> $LOG 2>&1
+                echo "SOSbackup was not found in GRUB 1.X." >> $TEMPLOG 2>&1
 		if [ "$DEDTYPE" == "partition" ]; then ROOTHD=$(cat $GRUBCFG |grep "root ("|grep -v "#"|head -1); fi
 		if [ "$DEDTYPE" == "disk" ]; then ROOTHD=$(cat /mnt/sosbkp$DEVMAP |grep $DEDREAL| cut -c 1-4); ROOTHD="        root $ROOTHD,0)"; fi
 		echo "#SOSbackup auto generated GRUB entry - START" >> $GRUBCFG
@@ -554,20 +545,21 @@ grub01edit() {
                         umount /mnt/sosbkp/proc
                 fi
 		PRINTSTATE="[DONE]            "
-                echo "GRUB is configured." >> $LOG 2>&1
+                echo "GRUB is configured." >> $TEMPLOG 2>&1
 	fi
 	printf "\033[u%s\n" "$PRINTSTATE"
 }
 
+# Edit LILO
 pliloedit() {
         printf "%.${MSGWIDTH}s" "Editing Grub$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
 	if grep -q "SOSbackup" /etc/lilo.conf ; then
 		PRINTSTATE="[NO CHANGE]            "
-		echo "SOSbackup found in LILO." >> $LOG >&1
+		echo "SOSbackup found in LILO." >> $TEMPLOG >&1
 	else
 		echo "Editing LILO..................................  [vvvv]"	
-		echo "SOSbackup was not found in LILO. Configuring ..." >> $LOG 2>&1
+		echo "SOSbackup was not found in LILO. Configuring ..." >> $TEMPLOG 2>&1
 		echo "#SOSbackup auto generated LILO entry - START" >> /etc/lilo.conf
 		echo "image = /boot/vmlinuz-SOSbackup" >> /etc/lilo.conf
 		echo "	root = $DED" >> /etc/lilo.conf
@@ -576,12 +568,11 @@ pliloedit() {
 		echo "#SOSbackup auto generated LILO entry - END" >> /etc/lilo.conf
 		lilo 
 		PRINTSTATE="[DONE]            "
-		echo "LILO is configured."  >> $LOG 2>&1
+		echo "LILO is configured."  >> $TEMPLOG 2>&1
 	fi
 }
 
-# POST-PROCESSES:
-
+# Clear the interrupted backup
 clear() {
 	printf "%.${MSGWIDTH}s" "Clearing the SOSbackup temp files$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
@@ -589,23 +580,25 @@ clear() {
         echo "============================" >> $LOG
         echo "Clearing SOSbackup" >> $LOG
         date >> $LOG
-        killall rsync >> $LOG 2>&1
-        umount -r /mnt/sosbkp >> $LOG 2>/dev/null
+        killall rsync >> $TEMPLOG 2>&1
+        umount -r /mnt/sosbkp >> $TEMPLOG 2>/dev/null
         sleep 1
-        rm -rf /mnt/sosbkp >> $LOG 2>&1
-        cat $LOG >> $LOGFILE
+        rm -rf /mnt/sosbkp >> $TEMPLOG 2>&1
+        cat $TEMPLOG >> $LOGFILE
 	printf "\033[u%s\n" "[DONE]       "
 }
 
+# Send backup report via email
 sendlog() {
 	if [ $SENDEMAIL == 1 ]; then
 		printf "%.${MSGWIDTH}s" "Sending log to $EMAIL$dots"
 		printf "\033[s%s" "[PROCESSING]"; sleep 1
-		cat -v $LOG | mailx -r $SMTPUSER -s "SOSbackup report" -S smtp=$SMTP -S smtp-use-starttls -S smtp-auth=login -S smtp-auth-user=$SMTPUSER -S smtp-auth-password=$SMTPPASS -S ssl-verify=ignore -S nss-config-dir=$NSSCONFIGDIR $EMAIL
+		cat -v $TEMPLOG | mailx -r $SMTPUSER -s "SOSbackup report" -S smtp=$SMTP -S smtp-use-starttls -S smtp-auth=login -S smtp-auth-user=$SMTPUSER -S smtp-auth-password=$SMTPPASS -S ssl-verify=ignore -S nss-config-dir=$NSSCONFIGDIR $EMAIL
 		printf "\033[u%s\n" "[DONE]       "
 	fi
 }
 
+# Shutdown the machine
 shutdonwserver() {
         if [ $SHUT == 1 ]; then
 		printf "%s" "INFO: Shutting down..."
@@ -620,14 +613,16 @@ shutdonwserver() {
 }
 
 
-# ADDITIONAL INFO:
+# ADDITIONAL INFO (you don't need to be root for this):
 
+# Version of SOSbackup
 ver() {
         echo "SOSbackup $version"
         echo "Author: Michal Muransky"
         exit 0
 }
 
+# Show the last backup info
 show() {
         usercheck
         if [ ! -f /var/tmp/sosbkp ]; then
@@ -648,49 +643,87 @@ show() {
         echo "==================================================="
         umount /mnt/sosbkp 2> /dev/null
         sleep 1
-        rm -rf /mnt/sosbkp >> $LOG 2>&1
+        rm -rf /mnt/sosbkp >> $TEMPLOG 2>&1
         exit 0
 }
 
+# It is what it is :)
 help() {
         echo ""
-        echo "SOSbackup $version"
+        echo "SimpleOSbackup $version"
         echo ""
-        echo "This script is used to backup whole OS to a different single partition."
-        echo "Backup device is fully operational and can be booted in case of emergency."
-        echo "You must be a root or to be in sudoers to be able to run SOSbackup."
+	echo "SimpleOSbackup or simply - SOSbackup is a bash shell script used for backup of Linux OS system."
+	echo "You can run backup to a partition or whole disk. In case you are running backup to a partition,"
+	echo 'the backup will exclude "boot" fs (/boot, /boot/efi etc.). If you are running backup to a disk,'
+	echo "SOSbackup will erease current partition table on it (if there is any) and create a new one."
+	echo "More info in the section of specific functions." 
+        echo "Backup is fully operational and can choosen from GRUB or LILO menu. The boot loader on the original"
+	echo "disk is still needed. So far the boot loader on the backup device does not work. In the situation"
+	echo "where your original disk will break up you will need to install the GRUB or LILO manually to the backup"
+	echo 'device. One day maybe i will implement that into the script too :). However, the boot loader config'
+	echo "file will be configured by SOSbackup so you will not need to edit it manually."
+        echo "You must be a root or to be able to run SOSbackup for OS backup."
+	echo "This script was tested on several Linux distributions in various configurations."
+	echo ""
+	echo "I am not responsible for any damage done using this tool."
         echo ""
-        echo "How to use: sosbkp [OPTIONS]... [-d|--to-disk=<partition>]"
+	echo ""
+        echo "How to use: sosbkp [OPTIONS]..."
         echo ""
         echo "Arguments:"
-        echo "-d <partition>, --to-disk=<partition>	Start OSCopy to destionation"
+        echo '-p <partition>, --to-partition=<partition>	Start SOSbackup to the partition'
+	echo "					THIS OPTION NEEDS TO BE ON THE END OF THE COMMAND"
+	echo "					Partition needs to be formated before you start SOSbackup."
         echo "					If you are using LVM partition as the destination,"
-        echo "					use path /dev/mapper/... "
+        echo '					use path /dev/mapper/... '
+	echo "					SOSbackup wil erease all data on the partition by default."
+	echo ""
+	echo "-d <disk>, --to-disk=<disk>		Start SOSbackup to the disk." 
+	echo "					THIS OPTION NEEDS TO BE ON THE END OF THE COMMAND"
+	echo "					SOSbackup will erease existing partitions on the backup"
+	echo "					backup device any and create two new partitions."
+	echo "					The first one is for boot fs and the second for the rest of the data."
+	echo "					SOSbackup will edit boot loader menu and add the new boot device."
+	echo '					The backup device will be not bootable (even the configuration'
+	echo '					files are ready and do not need to be edited). In case your'
+	echo "					original boot device will fail or damage, you will need to"
+	echo '					install the boot loader to the new disk (beckup disk).'
+	echo ""
         echo "-S, --shutdown				Shutdown after backup"
+	echo ""
         echo "-x, --no-email				Report will be not sent via email"
+	echo ""
+	echo "-X, --no-selinux			Do not copy SELinux labels"
+	echo ""
         echo "-c, --clear				Can be used after interrupted backup"
+	echo ""
         echo "-n, --no-delete				Do NOT delete previous backup data. Will update current backup."
-        echo "					Keep in mind that rsync nees some free space for temporarry files."
+	echo ""
+        echo "					Keep in mind that rsync needs some free space for temporarry files."
+	echo ""
         echo "-s, --show				Show last backup info"
-        echo "-f, --force				Force backup and suppress all warnings."
+	echo ""
+        echo '-f, --force				Force backup and suppress warnings. (Missing rsync can not be suppresed)'
+	echo ""
         echo "-v, --version				Show SOSbackup version"
+	echo ""
         echo "    --debug				Debug mode"
+	echo ""
         echo "-h, --help				This Help page"
         echo ""
+	echo ""
         echo "Example:"
-        echo "sosbkp --to-disk=/dev/sdb1"
-        echo "sosbkp -Sxd /dev/sdb1"
-        echo "sosbkp -S -f -d /dev/mapper/backup_vg-backup_lv"
+        echo "sosbkp --to-partition=/dev/sdb1"
+        echo "sosbkp -Sxp /dev/sdb1"
+	echo "sosbkp -S -f -p /dev/mapper/backup_vg-backup_lv"
+	echo "sosbkp --no-selinux -d /dev/sdc"
+        echo "sosbkp -d sdc"
         echo ""
         exit 0
 }
 
 while true ; do
     case "$1" in
-	-t|--test)
-	    todisk
-            break
-            ;;
 	-X|--no-selinux)
 	    SELINUX=0
 	    shift
@@ -712,7 +745,6 @@ while true ; do
         -c|--clear)
 	    usercheck
             clear
-            break
             ;;
         -x|--no-email)
             SENDEMAIL=0
