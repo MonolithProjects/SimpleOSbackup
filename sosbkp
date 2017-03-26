@@ -17,7 +17,7 @@ version=1.0-alpha-3
 # All these settings can be overwritten by specific option. Run "sosbkp -h" to see more.
 
 # Path to temporary log file
-LOG=/tmp/sosbkp.txt
+TEMPLOG=/tmp/sosbkp.txt
 
 # Path to settings file
 SETTINGS=/etc/sosbkp.conf
@@ -148,14 +148,14 @@ patched() {
 	if [ $SO -lt 7 ]; then
 		if [ $FORCE == 0 ]; then
 			printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
-			echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
+			#echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
 	     		sendlog
 	       		cat $TEMPLOG >> $LOGFILE
 			clear
                		exit 1
 		else
 			PRINTSTATE="[ERROR - FORCED TO CONITUE]       "
-	                echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
+	                #echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
 			sleep 1
 		fi
         fi
@@ -171,14 +171,14 @@ checkmount() {
         if [ -n "$MOUNTED" ]; then
 		if [ $FORCE == 0 ]; then
 			printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
-	           	echo "WARNING: $DED is already mounted! SOSbackup is stopped." >> $LOG
+	           	#echo "WARNING: $DED is already mounted! SOSbackup is stopped." >> $LOG
            		sendlog
            		cat $TEMPLOG >> $LOGFILE
 	   		clear
            		exit 1
 		else
 			PRINTSTATE="[ERROR - FORCED TO CONITUE]       "
-                        echo "WARNING: $DED is already mounted! SOSbackup is stopped." >> $LOG
+                        #echo "WARNING: $DED is already mounted! SOSbackup is stopped." >> $LOG
 			sleep 1
 		fi
         fi
@@ -289,8 +289,8 @@ topartition() {
         fi
 	printf "\033[u%s\n" "[OK]           "
         > $LOG
-        echo "============================" >> $LOG
-        echo "SOSbackup Report" >> $LOG
+        #echo "============================" >> $LOG
+        #echo "SOSbackup Report" >> $LOG
         date >> $LOG
 	echo "topartition" > /var/tmp/sosbkp
         echo $DEDREAL >> /var/tmp/sosbkp
@@ -312,10 +312,10 @@ topartition() {
         if [ -f /etc/lilo.conf ]; then pliloedit; fi
 	printf "%.${MSGWIDTH}s" "Unmounting the backup device $dots"
 	printf "\033[s%s" "[PROCESSING]"; sleep 1
-        echo "Unmounting $DEDREAL and removing /mnt/sosbkp" >> $LOG
+        #echo "Unmounting $DEDREAL and removing /mnt/sosbkp" >> $LOG
         umount /mnt/sosbkp > /dev/null && sleep 2; rm -r /mnt/sosbkp >> $TEMPLOG 2>&1
 	printf "\033[u%s\n" "[DONE]         "
-        echo "DONE" >> $LOG
+        #echo "DONE" >> $LOG
         sendlog
         sleep 1
         rm -rf /mnt/sosbkp >> $TEMPLOG 2>&1
@@ -345,9 +345,9 @@ fstabedit() {
         egrep "$EXCEPTGREP" /etc/fstab > /tmp/fstab.temp
         cat /tmp/fstab.temp >> /mnt/sosbkp/etc/fstab
         echo "fstab on backup device has been edited:" >> $TEMPLOG 2>&1
-        echo "" >> $LOG
+        #echo "" >> $LOG
         cat /mnt/sosbkp/etc/fstab >> $LOG
-        echo "" >> $LOG
+        #echo "" >> $LOG
         printf "\033[u%s\n" "[DONE]         "
 }
 
@@ -358,7 +358,7 @@ dedreal() {
         elif [ -b /dev/$DED ]; then
                 DEDREAL=/dev/$DED
         else
-           echo "Destination $DEDREAL not found!" >> $LOG
+           #echo "Destination $DEDREAL not found!" >> $LOG
            printf "\033[u%s\n" "[ERROR]       "
 	   printf "%s" "INFO: Destination $DEDREAL was not found."
            cat $TEMPLOG >> $LOGFILE
@@ -577,9 +577,9 @@ clear() {
 	printf "%.${MSGWIDTH}s" "Clearing the SOSbackup temp files$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
         > $LOG
-        echo "============================" >> $LOG
-        echo "Clearing SOSbackup" >> $LOG
-        date >> $LOG
+        #echo "============================" >> $LOG
+        #echo "Clearing SOSbackup" >> $LOG
+        #date >> $LOG
         killall rsync >> $TEMPLOG 2>&1
         umount -r /mnt/sosbkp >> $TEMPLOG 2>/dev/null
         sleep 1
