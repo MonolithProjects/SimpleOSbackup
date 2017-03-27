@@ -48,7 +48,7 @@ eval set -- "$TEMP"
 
 # Clearing and reading Settings file
 LOGFILE=""
-SHUTSCRIPT=""
+SHUTSCRIPT="shutdown -P now"
 TITLE=""
 EMAIL=""
 SMTP=""
