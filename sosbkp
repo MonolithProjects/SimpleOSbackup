@@ -48,7 +48,6 @@ eval set -- "$TEMP"
 
 # Clearing and reading Settings file
 LOGFILE=""
-SHUTSCRIPT="shutdown -P now"
 TITLE=""
 EMAIL=""
 SMTP=""
@@ -59,6 +58,9 @@ ADDITIONALDONOTCOPY=""
 dots="..........................................."
 dots=$dots$dots$dots
 source $SETTINGS
+if [ -z $SHUTSCRIPT ]; then
+	SHUTSCRIPT="shutdown -P now"
+fi
 
 # MANDATORY CHECKS:
 
