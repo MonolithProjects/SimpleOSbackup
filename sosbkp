@@ -55,12 +55,10 @@ SMTPUSER=""
 SMTPPASS=""
 NSSCONFIGDIR=""
 ADDITIONALDONOTCOPY=""
+SHUTSCRIPT=""
 dots="..........................................."
 dots=$dots$dots$dots
 source $SETTINGS
-if [ -z $SHUTSCRIPT ]; then
-	SHUTSCRIPT="shutdown -P now"
-fi
 
 # MANDATORY CHECKS:
 
@@ -270,6 +268,7 @@ todisk() {
 	umount /mnt/sosbkp
 	rm -r /mnt/sosbkp	
 	printf "\033[u%s\n" "[DONE]       "
+	shutdonwserver
 	exit 0
 }
 
@@ -603,7 +602,7 @@ sendlog() {
 # Shutdown the machine
 shutdonwserver() {
         if [ $SHUT == 1 ]; then
-		printf "%s" "INFO: Shutting down..."
+		printf "%s" "INFO: Shutting down the system..."
 		echo "Shutting down the system..." >> $LOGFILE 2>&1
 		if [ -f $SHUTSCRIPT ]
                 	then
