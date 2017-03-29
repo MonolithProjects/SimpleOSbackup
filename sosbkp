@@ -259,14 +259,15 @@ todisk() {
 	if [ -d /boot/grub2 ]; then grub2edit; fi
 	if [ -f /boot/grub/menu.lst ]; then grub01edit; fi
 	date +%F_%R > /mnt/sosbkp/.sosbkp_timestamp
-        echo "topartition" > /var/tmp/sosbkp
-        echo $DEDREAL"1" >> /var/tmp/sosbkp
-	echo $DEDREAL"2" >> /var/tmp/sosbkp
+        echo BACKUPTO="disk" > /var/tmp/sosbkp_info
+        echo DEDREAL1=$DEDREAL"1" >> /var/tmp/sosbkp_info
+	echo DEDREAL2=$DEDREAL"2" >> /var/tmp/sosbkp_info
+	echo BOOTMP=$BOOTMP >> /var/tmp/sosbkp_info
 	printf "%.${MSGWIDTH}s" "Unmounting backup device$dots"
 	printf "\033[s%s" "[PROCESSING]"; sleep 1
 	umount /mnt/sosbkp$BOOTMP
 	umount /mnt/sosbkp
-	rm -r /mnt/sosbkp	
+	rm -fr /mnt/sosbkp	
 	printf "\033[u%s\n" "[DONE]       "
 	shutdonwserver
 	exit 0
@@ -306,6 +307,9 @@ topartition() {
 	ADDITIONALDONOTCOPY=" --exclude=$BOOTMP/* "
         copy
 	date +%F_%R > /mnt/sosbkp/.sosbkp_timestamp
+        echo BACKUPTO="partition" > /var/tmp/sosbkp_info
+        echo DEDREAL=$DEDREAL >> /var/tmp/sosbkp_info
+        echo BOOTMP=$BOOTMP >> /var/tmp/sosbkp_info
 	fstabedit
         kernelbak
         if [ -d /boot/grub2 ]; then grub2edit; fi
@@ -347,7 +351,7 @@ fstabedit() {
         cat /tmp/fstab.temp >> /mnt/sosbkp/etc/fstab
         echo "fstab on backup device has been edited:" >> $TEMPLOG 2>&1
         #echo "" >> $LOG
-        cat /mnt/sosbkp/etc/fstab >> $LOG
+        cat /mnt/sosbkp/etc/fstab >> $TEMPLOG
         #echo "" >> $LOG
         printf "\033[u%s\n" "[DONE]         "
 }
@@ -626,25 +630,37 @@ ver() {
 # Show the last backup info
 show() {
         usercheck
-        if [ ! -f /var/tmp/sosbkp ]; then
-                echo "WARNING: File /var/tmp/sosbkp is missing. There are probably no backups."
+	printf "%.${MSGWIDTH}s" "Preparing all the information$dots"
+	printf "\033[s%s" "[PROCESSING]"
+        if [ ! -f /var/tmp/sosbkp_info ]; then
+		 printf "\033[u%s\n" "[ERROR]      "
+                 printf "INFO: There is no known backup."
                 exit 1
         fi
-	DED=$(cat /var/tmp/sosbkp)
-        mkdir /mnt/sosbkp 2> /dev/null
-        mount $DED /mnt/sosbkp 2> /dev/null
-        timestamp=`cat /mnt/sosbkp/.sosbkp_timestamp`
-        noofiles=`du /mnt/sosbkp/ |wc -l|tail -1`
+	source /var/tmp/sosbkp_info
+	mkdir -p /mnt/sosbkp 2> /dev/null
+	if [ "$BACKUPTO" == "partition" ]; then
+		mount $DEDREAL /mnt/sosbkp
+	elif [ "$BACKUPTO" == "disk" ]; then
+		mount $DEDREAL2 /mnt/sosbkp
+		mount $DEDREAL1 /mnt/sosbkp$BOOTMP 
+	else
+		printf "\033[u%s\n" "[ERROR]       "
+		printf "INFO: Unable to determine last backup destination."
+	fi
+	printf "\033[u%s\n" "[DONE]       "
+        TIMESTAMP=$(cat /mnt/sosbkp/.sosbkp_timestamp)
+        NOOFILES=$(du /mnt/sosbkp/ |wc -l|tail -1)
         echo "==================================================="
-        echo "OS Backup created on $timestamp by $noofiles files"
+        echo "SOS Backup created on $TIMESTAMP consist of $NOOFILES files"
         echo "==================================================="
-        ls -la /mnt/sosbkp
+        ls -l /mnt/sosbkp
         echo "==================================================="
+	if [ "$BACKUPTO" == "disk" ]; then df -hP /mnt/sosbkp$BOOTMP ; fi
         df -hP /mnt/sosbkp
         echo "==================================================="
-        umount /mnt/sosbkp 2> /dev/null
+        umount --recursive /mnt/sosbkp 2> /dev/null
         sleep 1
-        rm -rf /mnt/sosbkp >> $TEMPLOG 2>&1
         exit 0
 }
 
@@ -656,7 +672,7 @@ help() {
 	echo "SimpleOSbackup or simply - SOSbackup is a bash shell script used for backup of Linux OS system."
 	echo "You can run backup to a partition or whole disk. In case you are running backup to a partition,"
 	echo 'the backup will exclude "boot" fs (/boot, /boot/efi etc.). If you are running backup to a disk,'
-	echo "SOSbackup will erease current partition table on it (if there is any) and create a new one."
+	echo 'SOSbackup will erease current partition table on it (if there is any) and create a new one.'
 	echo "More info in the section of specific functions." 
         echo "Backup is fully operational and can choosen from GRUB or LILO menu. The boot loader on the original"
 	echo "disk is still needed. So far the boot loader on the backup device does not work. In the situation"
