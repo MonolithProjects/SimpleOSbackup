@@ -46,16 +46,53 @@ MSGWIDTH=50
 TEMP=`getopt -o tXxvnsSchfp:d: --long test,no-selinux,no-delete,help,version,show,shutdown,no-email,clear,force,debug,to-partition:,to-disk: -- "$@"`
 eval set -- "$TEMP"
 
-# Clearing and reading Settings file
-LOGFILE=""
-TITLE=""
-EMAIL=""
-SMTP=""
-SMTPUSER=""
+
+# Checking if the Settings file exist. If not it will create one.
+
+if [ ! -f $SETTINGS ]; then
+        cat <<EOF > $SETTINGS
+
+### Simple OS backup configuration file
+### Exclude following folders from backup
+EXCLUDE=(/mnt /media /lost+found)
+
+### Log file location
+LOGFILE=/var/log/myoscopy.log
+
+### Path to custom shutdown script (optional)
+SHUTSCRIPT=
+
+### GRUB title for backup disk (This will be ignored if you are using LILO. For LILO is the title/label hardcoded as "SOSbackup")
+TITLE="Boot from SOSbackup disk"
+
+### Email address where you want to receive the report
+EMAIL=youremail@yourdomain.com
+
+
+### External Gmail SMTP server:
+
+### Server address and port
+SMTP="smtp.gmail.com:587"
+
+### User name for the email account in format "something@gmail.com"
+SMTPUSER="sosbkpsenderemail@gmail.com"
+
+### Password to the email account
+### You need to allow access for less secure apps - https://www.google.com/settings/security/lesssecureapps
 SMTPPASS=""
-NSSCONFIGDIR=""
-ADDITIONALDONOTCOPY=""
-SHUTSCRIPT=""
+
+### Certificates
+NSSCONFIGDIR="/etc/pki/nssdb/"
+
+EOF
+else
+
+# Read config file
+source $SETTINGS
+fi
+
+
+# Dots displayed in messages
 dots="..........................................."
 dots=$dots$dots$dots
 source $SETTINGS
@@ -253,6 +290,7 @@ todisk() {
 	printf "\033[u%s\n" "[DONE]        "
 	mountded
 	kernelbak
+	ADDITIONALDONOTCOPY=""
 	copy
 	BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTDEDNAME |awk '{print $9}')
 	fstabedit
@@ -290,10 +328,10 @@ topartition() {
                 exit 1
         fi
 	printf "\033[u%s\n" "[OK]           "
-        > $LOG
+        > $TEMPLOG
         #echo "============================" >> $LOG
         #echo "SOSbackup Report" >> $LOG
-        date >> $LOG
+        date >> $TEMPLOG
 	echo "topartition" > /var/tmp/sosbkp
         echo $DEDREAL >> /var/tmp/sosbkp
         patched
@@ -598,8 +636,13 @@ sendlog() {
 	if [ $SENDEMAIL == 1 ]; then
 		printf "%.${MSGWIDTH}s" "Sending log to $EMAIL$dots"
 		printf "\033[s%s" "[PROCESSING]"; sleep 1
-		cat -v $TEMPLOG | mailx -r $SMTPUSER -s "SOSbackup report" -S smtp=$SMTP -S smtp-use-starttls -S smtp-auth=login -S smtp-auth-user=$SMTPUSER -S smtp-auth-password=$SMTPPASS -S ssl-verify=ignore -S nss-config-dir=$NSSCONFIGDIR $EMAIL
-		printf "\033[u%s\n" "[DONE]       "
+		if [ -z $SMTPPASS ]; then
+			PRINTSTATE="[ERROR]            "
+		else
+			cat -v $TEMPLOG | mailx -r $SMTPUSER -s "SOSbackup report" -S smtp=$SMTP -S smtp-use-starttls -S smtp-auth=login -S smtp-auth-user=$SMTPUSER -S smtp-auth-password=$SMTPPASS -S ssl-verify=ignore -S nss-config-dir=$NSSCONFIGDIR $EMAIL 2> /dev/null
+			PRINTSTATE="[DONE]            "
+		fi
+		printf "\033[u%s\n" "$PRINTSTATE"
 	fi
 }
 
