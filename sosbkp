@@ -95,6 +95,7 @@ fi
 # Dots displayed in messages
 dots="..........................................."
 dots=$dots$dots$dots
+if [ ! -f $LOGFILE ]; then touch $LOGFILE ;fi
 source $SETTINGS
 
 # MANDATORY CHECKS:
@@ -145,12 +146,15 @@ sizecheck()     {
         if [ $TOGETHER -gt $DEDSIZE ]; then
 		if [ $FORCE == 0 ]; then
 			printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
+			echo "ERROR - destination is too small" >> $TEMPLOG
+                        echo "Backup Interrupted!" >> $TEMPLOG
 			sendlog
 			cat $TEMPLOG >> $LOGFILE
                 	clear
                 	exit 1
 		else
 			PRINTSTATE="[ERROR - FORCED TO CONITUE]       "
+			echo "ERROR - destination is too small" >> $TEMPLOG
 			sleep 1
 		fi
         fi
@@ -185,14 +189,15 @@ patched() {
 	if [ $SO -lt 7 ]; then
 		if [ $FORCE == 0 ]; then
 			printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
-			#echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
+			echo "ERROR - Kernel was updated less thane 7 days ago" >> $TEMPLOG
+			echo "Backup Interrupted!" >> $TEMPLOG
 	     		sendlog
 	       		cat $TEMPLOG >> $LOGFILE
 			clear
                		exit 1
 		else
 			PRINTSTATE="[ERROR - FORCED TO CONITUE]       "
-	                #echo "WARNING: Server was patched only $SO days back! SOSbackup is stopped." >> $LOG
+			echo "ERROR - Kernel was updated less thane 7 days ago" >> $TEMPLOG
 			sleep 1
 		fi
         fi
@@ -208,14 +213,15 @@ checkmount() {
         if [ -n "$MOUNTED" ]; then
 		if [ $FORCE == 0 ]; then
 			printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
-	           	#echo "WARNING: $DED is already mounted! SOSbackup is stopped." >> $LOG
+			echo "ERROR - backup destination is already mounted" >> $TEMPLOG
+			echo "Backup Interrupted!" >> $TEMPLOG
            		sendlog
            		cat $TEMPLOG >> $LOGFILE
 	   		clear
            		exit 1
 		else
 			PRINTSTATE="[ERROR - FORCED TO CONITUE]       "
-                        #echo "WARNING: $DED is already mounted! SOSbackup is stopped." >> $LOG
+			echo "ERROR - backup destination is already mounted" >> $TEMPLOG
 			sleep 1
 		fi
         fi
@@ -242,10 +248,15 @@ todisk() {
 		exit 1
 	fi
 	printf "\033[u%s\n" "[OK]           "
+        > $TEMPLOG
+        echo "" >> $TEMPLOG
+        echo "============================" >> $TEMPLOG
+        echo "SOSbackup Report" >> $TEMPLOG
+        echo "Backup to partition "$DEDREAL >> $TEMPLOG
+        date >> $TEMPLOG
 	printf "%.${MSGWIDTH}s" "Editing partition table$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
         DEDBP="/tmp/dedbp"
-        #2TB - 2199023255552B
         if [ "$DEDSECTORS" -gt 4294967292 -o "$EFI" == "yes" ]; then
                 DEDLAB="gpt"
         else
@@ -267,6 +278,7 @@ todisk() {
         fi
         sfdisk --force -q $DEDREAL < $DEDBP >/dev/null
 	printf "\033[u%s\n" "[DONE]        "
+	echo "Created the partitions "$DEDREAL"1 and "$DEDREAL"2" >> $TEMPLOG
 	printf "%.${MSGWIDTH}s" "Formatting $DEDREAL1 and $DEDREAL2$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
         if [ "$EFI" == "yes" ]; then
@@ -288,6 +300,8 @@ todisk() {
 		mkfs.ext4 -Fq $DEDREAL"2" >/dev/null
 	fi
 	printf "\033[u%s\n" "[DONE]        "
+	echo "Formated "$DEDREAL"1 to "$SODBOOTFS >> $TEMPLOG
+	echo "Formated "$DEDREAL"2 to "$SODROOTFS >> $TEMPLOG
 	mountded
 	kernelbak
 	ADDITIONALDONOTCOPY=""
@@ -305,9 +319,15 @@ todisk() {
 	printf "\033[s%s" "[PROCESSING]"; sleep 1
 	umount /mnt/sosbkp$BOOTMP
 	umount /mnt/sosbkp
-	rm -fr /mnt/sosbkp	
 	printf "\033[u%s\n" "[DONE]       "
-	shutdonwserver
+	rm -fr /mnt/sosbkp	
+        echo "Unmounted the backup device" >> $TEMPLOG
+        echo "Backup was successfull" >> $TEMPLOG
+        sendlog
+        sleep 1
+        rm -rf /mnt/sosbkp > /dev/null
+        cat $TEMPLOG >> $LOGFILE
+        shutdonwserver
 	exit 0
 }
 
@@ -329,18 +349,20 @@ topartition() {
         fi
 	printf "\033[u%s\n" "[OK]           "
         > $TEMPLOG
-        #echo "============================" >> $LOG
-        #echo "SOSbackup Report" >> $LOG
+	echo "" >> $TEMPLOG
+        echo "============================" >> $TEMPLOG
+        echo "SOSbackup Report" >> $TEMPLOG
+	echo "Backup to partition "$DEDREAL >> $TEMPLOG
         date >> $TEMPLOG
 	echo "topartition" > /var/tmp/sosbkp
         echo $DEDREAL >> /var/tmp/sosbkp
         patched
         if [ $DEL == 1 ]; then
-		echo "Clearing old OS backup." >> $TEMPLOG 2>&1
 		printf "%.${MSGWIDTH}s" "Clearing old OS backup$dots"
 		printf "\033[s%s" "[PROCESSING]"; sleep 1
 		rm -rf /mnt/sosbkp/* >> $TEMPLOG 2>&1
 		printf "\033[u%s\n" "[DONE]         "
+		echo "Cleared old OS backup" >> $TEMPLOG
         fi
 	ADDITIONALDONOTCOPY=" --exclude=$BOOTMP/* "
         copy
@@ -355,13 +377,13 @@ topartition() {
         if [ -f /etc/lilo.conf ]; then pliloedit; fi
 	printf "%.${MSGWIDTH}s" "Unmounting the backup device $dots"
 	printf "\033[s%s" "[PROCESSING]"; sleep 1
-        #echo "Unmounting $DEDREAL and removing /mnt/sosbkp" >> $LOG
-        umount /mnt/sosbkp > /dev/null && sleep 2; rm -r /mnt/sosbkp >> $TEMPLOG 2>&1
+        umount /mnt/sosbkp > /dev/null && sleep 2; rm -r /mnt/sosbkp >> $TEMPLOG
 	printf "\033[u%s\n" "[DONE]         "
-        #echo "DONE" >> $LOG
+	echo "Unmounted the backup device" >> $TEMPLOG
+        echo "Backup was successfull" >> $TEMPLOG
         sendlog
         sleep 1
-        rm -rf /mnt/sosbkp >> $TEMPLOG 2>&1
+        rm -rf /mnt/sosbkp > /dev/null
         cat $TEMPLOG >> $LOGFILE
         shutdonwserver
         exit 0
@@ -387,11 +409,9 @@ fstabedit() {
         fi
         egrep "$EXCEPTGREP" /etc/fstab > /tmp/fstab.temp
         cat /tmp/fstab.temp >> /mnt/sosbkp/etc/fstab
-        echo "fstab on backup device has been edited:" >> $TEMPLOG 2>&1
-        #echo "" >> $LOG
         cat /mnt/sosbkp/etc/fstab >> $TEMPLOG
-        #echo "" >> $LOG
         printf "\033[u%s\n" "[DONE]         "
+	echo "Edited fstab" >> $TEMPLOG
 }
 
 # Real path to destination
@@ -471,6 +491,7 @@ mountded() {
         	mount $DEDREAL"1" /mnt/sosbkp$BOOTMP
 	fi
 	printf "\033[u%s\n" "[DONE]       "
+	echo "Backup device has been mounted" >> $TEMPLOG
 }
 
 # Copy the data
@@ -483,7 +504,7 @@ copy() {
                 SEL=""
         fi
         DONOTCOPY=("${EXCLUDE[@]/%//*}")
-        rsync -aAv $SEL --human-readable --exclude=/dev/* --exclude=/sys/* --exclude=/run/* --exclude=/proc/* --exclude=/mnt/sosbkp $ADDITIONALDONOTCOPY ${DONOTCOPY[@]/#/--exclude=} / /mnt/sosbkp | sed '0,/^$/d' >> $TEMPLOG 2>&1
+        rsync -aAv $SEL --human-readable --exclude=/dev/* --exclude=/sys/* --exclude=/run/* --exclude=/proc/* --exclude=/mnt/sosbkp $ADDITIONALDONOTCOPY ${DONOTCOPY[@]/#/--exclude=} / /mnt/sosbkp | sed '0,/^$/d' >> $TEMPLOG
 	printf "\033[u%s\n" "[DONE]       "
 }
 
@@ -491,11 +512,11 @@ copy() {
 kernelbak() {
 	printf "%.${MSGWIDTH}s" "Creating copy of current kernel$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
-        echo "Copying current kernel." >> $TEMPLOG 2>&1
         cp -f /boot/vmlinuz-`uname -r` /boot/vmlinuz-SOSbackup 2>/dev/null
         cp -f /boot/vmlinuz-huge-`uname -r` /boot/vmlinuz-SOSbackup 2>/dev/null
 	cp -f /boot/initramfs-`uname -r`.img /boot/initramfs-SOSbackup.img 2>/dev/null
 	printf "\033[u%s\n" "[DONE]       "
+	echo "Created backup of current kernel" >> $TEMPLOG
 }
 
 # Edit GRUB 2
@@ -506,7 +527,7 @@ grub2edit() {
 	DEDROOTREAL=$(df |grep "/mnt/sosbkp$" |awk '{print $1}')
 	if [ -f /etc/grub.d/50_sosbkp ]; then
 		PRINTSTATE="[NO CHANGE]       "
-		echo "SOSbackup found in GRUB 2." >> $TEMPLOG 2>&1
+		echo "No change in GRUB 2" >> $TEMPLOG
 	else
 		echo "SOSbackup was not found in GRUB 2." >> $TEMPLOG 2>&1
 		source /etc/default/grub
@@ -540,8 +561,8 @@ grub2edit() {
 			umount /mnt/sosbkp/run
 			umount /mnt/sosbkp/proc
 		fi
-		PRINTSTATE="[NO CHANGE]       "
-        	echo "GRUB is configured." >> $TEMPLOG 2>&1
+		PRINTSTATE="[DONE]         "
+        	echo "GRUB 2 is configured" >> $TEMPLOG
 	fi
 	printf "\033[u%s\n" "$PRINTSTATE"
 }
@@ -563,7 +584,7 @@ grub01edit() {
 	fi
 	if grep -q "$TITLE" $GRUBCFG ; then
 		PRINTSTATE="[NO CHANGE]       "
-        	echo "SOSbackup found in GRUB." >> $TEMPLOG 2>&1
+		echo "No change in Legacy GRUB" >> $TEMPLOG
 	else
                 echo "SOSbackup was not found in GRUB 1.X." >> $TEMPLOG 2>&1
 		if [ "$DEDTYPE" == "partition" ]; then ROOTHD=$(cat $GRUBCFG |grep "root ("|grep -v "#"|head -1); fi
@@ -588,7 +609,7 @@ grub01edit() {
                         umount /mnt/sosbkp/proc
                 fi
 		PRINTSTATE="[DONE]            "
-                echo "GRUB is configured." >> $TEMPLOG 2>&1
+		echo "Legacy GRUB edited" >> $TEMPLOG
 	fi
 	printf "\033[u%s\n" "$PRINTSTATE"
 }
@@ -599,7 +620,7 @@ pliloedit() {
         printf "\033[s%s" "[PROCESSING]"; sleep 1
 	if grep -q "SOSbackup" /etc/lilo.conf ; then
 		PRINTSTATE="[NO CHANGE]            "
-		echo "SOSbackup found in LILO." >> $TEMPLOG >&1
+		echo "No change in LILO"  >> $TEMPLOG
 	else
 		echo "Editing LILO..................................  [vvvv]"	
 		echo "SOSbackup was not found in LILO. Configuring ..." >> $TEMPLOG 2>&1
@@ -611,22 +632,26 @@ pliloedit() {
 		echo "#SOSbackup auto generated LILO entry - END" >> /etc/lilo.conf
 		lilo 
 		PRINTSTATE="[DONE]            "
-		echo "LILO is configured."  >> $TEMPLOG 2>&1
+		echo "LILO is edited"  >> $TEMPLOG
 	fi
 }
+
+
+# STANDALONE FNCTIONS:
 
 # Clear the interrupted backup
 clear() {
 	printf "%.${MSGWIDTH}s" "Clearing the SOSbackup temp files$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
-        > $LOG
-        #echo "============================" >> $LOG
-        #echo "Clearing SOSbackup" >> $LOG
-        #date >> $LOG
-        killall rsync >> $TEMPLOG 2>&1
-        umount -r /mnt/sosbkp >> $TEMPLOG 2>/dev/null
+        if [ ! -f "$TEMPLOG" ]; then touch $TEMPLOG ; fi
+        echo "============================" >> $TEMPLOG
+        echo "Clearing SOSbackup" >> $TEMPLOG
+        date >> $TEMPLOG
+        killall rsync >> $TEMPLOG 2> /dev/null
+        umount -r /mnt/sosbkp >> $TEMPLOG 2> /dev/null
         sleep 1
-        rm -rf /mnt/sosbkp >> $TEMPLOG 2>&1
+        rm -rf /mnt/sosbkp >> $TEMPLOG 2> /dev/null
+	echo "SOSbackup processes was cleared" >> $TEMPLOG
         cat $TEMPLOG >> $LOGFILE
 	printf "\033[u%s\n" "[DONE]       "
 }
@@ -649,8 +674,8 @@ sendlog() {
 # Shutdown the machine
 shutdonwserver() {
         if [ $SHUT == 1 ]; then
-		printf "%s" "INFO: Shutting down the system..."
-		echo "Shutting down the system..." >> $LOGFILE 2>&1
+		printf "%s\n" "INFO: Shutting down the system..."
+		echo "Shutting down the system..." >> $LOGFILE 
 		if [ -f $SHUTSCRIPT ]
                 	then
                         	$SHUTSCRIPT 2>&1
@@ -805,6 +830,7 @@ while true ; do
         -c|--clear)
 	    usercheck
             clear
+	    break
             ;;
         -x|--no-email)
             SENDEMAIL=0
