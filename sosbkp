@@ -2,8 +2,8 @@
 
 #title           :SimpleOSbackup
 #author          :Michal Muransky
-#date            :29-March-17
-version=1.0-alpha-4
+#date            :05-April-17
+version=Beta
 
 
 
@@ -277,9 +277,9 @@ todisk() {
                 echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", Id=0FC63DAF-8483-4772-8E79-3D69D8477DE4" >> $DEDBP
         fi
         sfdisk --force -q $DEDREAL < $DEDBP >/dev/null
-	printf "\033[u%s\n" "[DONE]        "
+	printf "\033[u%s\n" "[OK]        "
 	echo "Created the partitions "$DEDREAL"1 and "$DEDREAL"2" >> $TEMPLOG
-	printf "%.${MSGWIDTH}s" "Formatting $DEDREAL1 and $DEDREAL2$dots"
+	printf "%.${MSGWIDTH}s" "Formatting $DEDREAL"1" and $DEDREAL"2"$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
         if [ "$EFI" == "yes" ]; then
                 mkfs.vfat -Fq $DEDREAL"1" >/dev/null
@@ -299,7 +299,7 @@ todisk() {
 	else
 		mkfs.ext4 -Fq $DEDREAL"2" >/dev/null
 	fi
-	printf "\033[u%s\n" "[DONE]        "
+	printf "\033[u%s\n" "[OK]        "
 	echo "Formated "$DEDREAL"1 to "$SODBOOTFS >> $TEMPLOG
 	echo "Formated "$DEDREAL"2 to "$SODROOTFS >> $TEMPLOG
 	mountded
@@ -310,6 +310,7 @@ todisk() {
 	fstabedit
 	if [ -d /boot/grub2 ]; then grub2edit; fi
 	if [ -f /boot/grub/menu.lst ]; then grub01edit; fi
+	if [ -f /etc/lilo.conf ]; then liloedit; fi
 	date +%F_%R > /mnt/sosbkp/.sosbkp_timestamp
         echo BACKUPTO="disk" > /var/tmp/sosbkp_info
         echo DEDREAL1=$DEDREAL"1" >> /var/tmp/sosbkp_info
@@ -319,7 +320,7 @@ todisk() {
 	printf "\033[s%s" "[PROCESSING]"; sleep 1
 	umount /mnt/sosbkp$BOOTMP
 	umount /mnt/sosbkp
-	printf "\033[u%s\n" "[DONE]       "
+	printf "\033[u%s\n" "[OK]         "
 	rm -fr /mnt/sosbkp	
         echo "Unmounted the backup device" >> $TEMPLOG
         echo "Backup was successfull" >> $TEMPLOG
@@ -361,7 +362,7 @@ topartition() {
 		printf "%.${MSGWIDTH}s" "Clearing old OS backup$dots"
 		printf "\033[s%s" "[PROCESSING]"; sleep 1
 		rm -rf /mnt/sosbkp/* >> $TEMPLOG 2>&1
-		printf "\033[u%s\n" "[DONE]         "
+		printf "\033[u%s\n" "[OK]         "
 		echo "Cleared old OS backup" >> $TEMPLOG
         fi
 	ADDITIONALDONOTCOPY=" --exclude=$BOOTMP/* "
@@ -374,11 +375,11 @@ topartition() {
         kernelbak
         if [ -d /boot/grub2 ]; then grub2edit; fi
         if [ -f /boot/grub/menu.lst ]; then grub01edit; fi
-        if [ -f /etc/lilo.conf ]; then pliloedit; fi
+        if [ -f /etc/lilo.conf ]; then liloedit; fi
 	printf "%.${MSGWIDTH}s" "Unmounting the backup device $dots"
 	printf "\033[s%s" "[PROCESSING]"; sleep 1
         umount /mnt/sosbkp > /dev/null && sleep 2; rm -r /mnt/sosbkp >> $TEMPLOG
-	printf "\033[u%s\n" "[DONE]         "
+	printf "\033[u%s\n" "[OK]         "
 	echo "Unmounted the backup device" >> $TEMPLOG
         echo "Backup was successfull" >> $TEMPLOG
         sendlog
@@ -410,20 +411,22 @@ fstabedit() {
         egrep "$EXCEPTGREP" /etc/fstab > /tmp/fstab.temp
         cat /tmp/fstab.temp >> /mnt/sosbkp/etc/fstab
         cat /mnt/sosbkp/etc/fstab >> $TEMPLOG
-        printf "\033[u%s\n" "[DONE]         "
+        printf "\033[u%s\n" "[OK]         "
 	echo "Edited fstab" >> $TEMPLOG
 }
 
 # Real path to destination
 dedreal() {
+	printf "%.${MSGWIDTH}s" "Looking for destination$dots"
+        printf "\033[s%s" "[PROCESSING]"; sleep 1
         if [ -b $DED ]; then
                 DEDREAL=$DED
         elif [ -b /dev/$DED ]; then
                 DEDREAL=/dev/$DED
         else
-           #echo "Destination $DEDREAL not found!" >> $LOG
+           #echo "Destination $DED not found!" >> $LOG
            printf "\033[u%s\n" "[ERROR]       "
-	   printf "%s" "INFO: Destination $DEDREAL was not found."
+	   printf "%s" "INFO: Destination $DED was not found."
            cat $TEMPLOG >> $LOGFILE
            exit 1
         fi
@@ -435,6 +438,8 @@ dedreal() {
         else
                 DEDTYPE="disk"
         fi
+	printf "\033[u%s\n" "[OK]         "
+	echo "Destination $DED does exist" >> $TEMPLOG
 }
 
 # Collect information
@@ -475,7 +480,7 @@ collectinfo() {
         DEDSECTORS=$(cat /sys/block/$SODREALNAME/size)
 	if [ "$DEDTYPE" == "partition" ] ; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTNAME |awk '{print $9}'); fi
 	# BOOTUUID for disk is in the function todisk
-	printf "\033[u%s\n" "[DONE]       "
+	printf "\033[u%s\n" "[OK]        "
 }
 
 # Mount destination
@@ -490,7 +495,7 @@ mountded() {
         	mkdir -p /mnt/sosbkp$BOOTMP
         	mount $DEDREAL"1" /mnt/sosbkp$BOOTMP
 	fi
-	printf "\033[u%s\n" "[DONE]       "
+	printf "\033[u%s\n" "[OK]         "
 	echo "Backup device has been mounted" >> $TEMPLOG
 }
 
@@ -505,7 +510,7 @@ copy() {
         fi
         DONOTCOPY=("${EXCLUDE[@]/%//*}")
         rsync -aAv $SEL --human-readable --exclude=/dev/* --exclude=/sys/* --exclude=/run/* --exclude=/proc/* --exclude=/mnt/sosbkp $ADDITIONALDONOTCOPY ${DONOTCOPY[@]/#/--exclude=} / /mnt/sosbkp | sed '0,/^$/d' >> $TEMPLOG
-	printf "\033[u%s\n" "[DONE]       "
+	printf "\033[u%s\n" "[OK]         "
 }
 
 # Backup the current kernel and rename (replace kernel version in the name with a word SOSbackup)
@@ -515,7 +520,7 @@ kernelbak() {
         cp -f /boot/vmlinuz-`uname -r` /boot/vmlinuz-SOSbackup 2>/dev/null
         cp -f /boot/vmlinuz-huge-`uname -r` /boot/vmlinuz-SOSbackup 2>/dev/null
 	cp -f /boot/initramfs-`uname -r`.img /boot/initramfs-SOSbackup.img 2>/dev/null
-	printf "\033[u%s\n" "[DONE]       "
+	printf "\033[u%s\n" "[OK]         "
 	echo "Created backup of current kernel" >> $TEMPLOG
 }
 
@@ -561,7 +566,7 @@ grub2edit() {
 			umount /mnt/sosbkp/run
 			umount /mnt/sosbkp/proc
 		fi
-		PRINTSTATE="[DONE]         "
+		PRINTSTATE="[OK]         "
         	echo "GRUB 2 is configured" >> $TEMPLOG
 	fi
 	printf "\033[u%s\n" "$PRINTSTATE"
@@ -569,17 +574,17 @@ grub2edit() {
 
 # Edit Legacy GRUB
 grub01edit() {
-        printf "%.${MSGWIDTH}s" "Editing Grub$dots"
+        printf "%.${MSGWIDTH}s" "Editing GRUB$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
 	GRUBCFG=$(find /boot -name grub.conf|grep grub.conf)
 	DEDROOTREAL=$(df |grep "/mnt/sosbkp$" |awk '{print $1}')
 	DEVMAP=$(find /boot -name device.map)
 	if [ "$DEDTYPE" == "disk" ]; then
 		if grep -q "$DEDREAL" $DEVMAP ; then
-			echo "Backup defice was found in devices.map"
+			echo "Backup defice was found in devices.map" >> $TEMPLOG
 		else
-			echo "Editing devices.map"
-			mv -f /mnt/sosbkp$DEVMAP /mnt/sosbkp$DEVMAP.bak; exit | grub --device-map=/mnt/sosbkp$DEVMAP > /dev/null
+			echo "Editing devices.map" >> $TEMPLOG
+			mv -f /mnt/sosbkp$DEVMAP /mnt/sosbkp$DEVMAP.bak; exit | grub --device-map=/mnt/sosbkp$DEVMAP &> /dev/null
 		fi
 	fi
 	if grep -q "$TITLE" $GRUBCFG ; then
@@ -597,43 +602,49 @@ grub01edit() {
 		echo "		initrd /initramfs-SOSbackup.img " >> $GRUBCFG
 		echo "#SOSbackup auto generated GRUB entry - END" >> $GRUBCFG
                 if [ "$DEDTYPE" == "disk" ]; then
+			cp -f $GRUBCFG /mnt/sosbkp$GRUBCFG
                         mount --bind /dev /mnt/sosbkp/dev
                         mount --bind /sys /mnt/sosbkp/sys
-                        mount --bind /run /mnt/sosbkp/run
+                        mount --bind /run /mnt/sosbkp/run &> /dev/null
                         mount --bind /proc /mnt/sosbkp/proc
                         chroot /mnt/sosbkp /bin/bash -c "grub-install $DEDREAL > /dev/null; dracut --force /boot/initramfs-SOSbackup.img"
-                        cp -f $GRUBCFG /mnt/sosbkp$GRUBCFG
                         umount /mnt/sosbkp/dev
                         umount /mnt/sosbkp/sys
-                        umount /mnt/sosbkp/run
+                        umount /mnt/sosbkp/run &> /dev/null
                         umount /mnt/sosbkp/proc
                 fi
-		PRINTSTATE="[DONE]            "
+		PRINTSTATE="[OK]            "
 		echo "Legacy GRUB edited" >> $TEMPLOG
 	fi
 	printf "\033[u%s\n" "$PRINTSTATE"
 }
 
 # Edit LILO
-pliloedit() {
-        printf "%.${MSGWIDTH}s" "Editing Grub$dots"
+liloedit() {
+        printf "%.${MSGWIDTH}s" "Editing LILO$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
 	if grep -q "SOSbackup" /etc/lilo.conf ; then
 		PRINTSTATE="[NO CHANGE]            "
 		echo "No change in LILO"  >> $TEMPLOG
 	else
-		echo "Editing LILO..................................  [vvvv]"	
 		echo "SOSbackup was not found in LILO. Configuring ..." >> $TEMPLOG 2>&1
 		echo "#SOSbackup auto generated LILO entry - START" >> /etc/lilo.conf
 		echo "image = /boot/vmlinuz-SOSbackup" >> /etc/lilo.conf
-		echo "	root = $DED" >> /etc/lilo.conf
+		if [ "$DEDTYPE" == "partition" ]; then echo "	root = $DEDREAL" >> /etc/lilo.conf ;fi
+		if [ "$DEDTYPE" == "disk" ]; then echo "	root = $DEDREAL"2 >> /etc/lilo.conf ;fi
 		echo "	label = SOSbackup" >> /etc/lilo.conf
 		echo "	read-only" >> /etc/lilo.conf
 		echo "#SOSbackup auto generated LILO entry - END" >> /etc/lilo.conf
-		lilo 
-		PRINTSTATE="[DONE]            "
+		cp -f /etc/lilo.conf /mnt/sosbkp/etc/lilo.conf
+		lilo &> /dev/null
+		if [ "$DEDTYPE" == "disk" ]; then
+			sed -i 's:'"boot = /dev/$SODREALNAME"':'"boot = $DEDREAL"':g' /mnt/sosbkp/etc/lilo.conf
+			lilo -C /mnt/sosbkp/etc/lilo.conf -b $DEDREAL &> /dev/null
+		fi
+		PRINTSTATE="[OK]            "
 		echo "LILO is edited"  >> $TEMPLOG
 	fi
+	printf "\033[u%s\n" "$PRINTSTATE"
 }
 
 
@@ -653,7 +664,7 @@ clear() {
         rm -rf /mnt/sosbkp >> $TEMPLOG 2> /dev/null
 	echo "SOSbackup processes was cleared" >> $TEMPLOG
         cat $TEMPLOG >> $LOGFILE
-	printf "\033[u%s\n" "[DONE]       "
+	printf "\033[u%s\n" "[OK]         "
 }
 
 # Send backup report via email
@@ -665,7 +676,7 @@ sendlog() {
 			PRINTSTATE="[ERROR]            "
 		else
 			cat -v $TEMPLOG | mailx -r $SMTPUSER -s "SOSbackup report" -S smtp=$SMTP -S smtp-use-starttls -S smtp-auth=login -S smtp-auth-user=$SMTPUSER -S smtp-auth-password=$SMTPPASS -S ssl-verify=ignore -S nss-config-dir=$NSSCONFIGDIR $EMAIL 2> /dev/null
-			PRINTSTATE="[DONE]            "
+			PRINTSTATE="[OK]            "
 		fi
 		printf "\033[u%s\n" "$PRINTSTATE"
 	fi
@@ -676,11 +687,11 @@ shutdonwserver() {
         if [ $SHUT == 1 ]; then
 		printf "%s\n" "INFO: Shutting down the system..."
 		echo "Shutting down the system..." >> $LOGFILE 
-		if [ -f $SHUTSCRIPT ]
+		if [ -f "$SHUTSCRIPT" ]
                 	then
-                        	$SHUTSCRIPT 2>&1
+                        	$SHUTSCRIPT
                 	else
-                        	shutdown -P now 2>&1
+                        	shutdown -h now 
                 fi
         fi
 }
@@ -690,8 +701,9 @@ shutdonwserver() {
 
 # Version of SOSbackup
 ver() {
-        echo "SOSbackup $version"
+        echo "SimpleOSbackup $version"
         echo "Author: Michal Muransky"
+	echo "2017"
         exit 0
 }
 
@@ -716,7 +728,7 @@ show() {
 		printf "\033[u%s\n" "[ERROR]       "
 		printf "INFO: Unable to determine last backup destination."
 	fi
-	printf "\033[u%s\n" "[DONE]       "
+	printf "\033[u%s\n" "[OK]       "
         TIMESTAMP=$(cat /mnt/sosbkp/.sosbkp_timestamp)
         NOOFILES=$(du /mnt/sosbkp/ |wc -l|tail -1)
         echo "==================================================="
