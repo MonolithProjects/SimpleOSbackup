@@ -2,7 +2,7 @@
 
 #title           :SimpleOSbackup
 #author          :Michal Muransky
-#date            :05-April-17
+#date            :11-April-17
 version=BETA
 
 
@@ -122,7 +122,7 @@ componentscheck() {
 		SENDEMAIL=0
 
 	else
-		printf "\033[u%s\n" "[OK]          "
+		printf "\033[u%s\n" "[OK]           "
 	fi
         printf "%.${MSGWIDTH}s" "Checking rsync$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
@@ -132,6 +132,21 @@ componentscheck() {
 		exit 1
 	else
 		printf "\033[u%s\n" "[OK]          "
+	fi
+	if [ "$DEDTYPE" == "disk" ] && [ ! -f /etc/lilo.conf ]; then
+		printf "%.${MSGWIDTH}s" "Checking dracut$dots"
+                printf "\033[s%s" "[PROCESSING]"; sleep 1
+		if [ ! -f /usr/bin/dracut ] && [ ! -f /sbin/dracut ]; then
+			if [ $FORCE == 0 ]; then
+				printf "\033[u%s\n" "[ERROR - INTERRUPTED]       "
+                		printf "%s\n" "INFO: Please install dracut."
+                		exit 1
+			else
+				printf "\033[u%s\n" "[ERROR]           "
+			fi
+		else
+			printf "\033[u%s\n" "[OK]          "
+		fi
 	fi
 }
 
@@ -234,10 +249,10 @@ checkmount() {
 # Create backup to disk
 todisk() {
 	usercheck
+	dedreal
 	componentscheck
 	checkmount
 	patched
-	dedreal
 	collectinfo
 	sizecheck
 	printf "%.${MSGWIDTH}s" "Checking destination type$dots"
@@ -270,19 +285,20 @@ todisk() {
         fi
         if [ $DEDLAB == "gpt" ]; then
                 if [ "$EFI" == "yes" ]; then
+			echo "label: gpt" >> $DEDBP
                         echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", Id=C12A7328-F81F-11D2-BA4B-00A0C93EC93B" >> $DEDBP
                 else
                         echo $DEDREAL"1 : start= 2048, size= "$BOOTFSSIZE", Id=21686148-6449-6E6F-744E-656564454649" >> $DEDBP
                 fi
                 echo $DEDREAL"2 : start= "$(($BOOTFSSIZE+2048))", size= "$DEDSECT", Id=0FC63DAF-8483-4772-8E79-3D69D8477DE4" >> $DEDBP
         fi
-        sfdisk --force -q $DEDREAL < $DEDBP >/dev/null
+        sfdisk --force -q $DEDREAL < $DEDBP &>/dev/null
 	printf "\033[u%s\n" "[OK]        "
 	echo "Created the partitions "$DEDREAL"1 and "$DEDREAL"2" >> $TEMPLOG
 	printf "%.${MSGWIDTH}s" "Formatting $DEDREAL"1" and $DEDREAL"2"$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
         if [ "$EFI" == "yes" ]; then
-                mkfs.vfat -Fq $DEDREAL"1" >/dev/null
+                mkfs.vfat $DEDREAL"1" &>/dev/null
         else
 		if [[ $SODBOOTFS == "ext"* ]]; then
 			mkfs.$SODBOOTFS -Fq $DEDREAL"1" >/dev/null
@@ -306,11 +322,17 @@ todisk() {
 	kernelbak
 	ADDITIONALDONOTCOPY=""
 	copy
-	BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTDEDNAME |awk '{print $9}')
+	if [ $EFI == "yes" ]; then
+		BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $DEDREALNAME"2" |awk '{print $9}')
+	else
+		BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $DEDREALNAME"1" |awk '{print $9}')
+	fi
 	fstabedit
-	if [ -d /boot/grub2 ]; then grub2edit; fi
-	if [ -f /boot/grub/menu.lst ]; then grub01edit; fi
-	if [ -f /etc/lilo.conf ]; then liloedit; fi
+	if [ -d /etc/grub.d ] && [ -n "$(dd if=/dev/$SODREALNAME bs=512 count=1 2>&1 |grep GRUB)" ]; then grub2edit
+	elif [ -d /etc/grub.d ] && [ $EFI == "yes" ]; then grub2edit
+	fi
+	if [ -f /boot/grub/grub.conf ] && [ -n "$(dd if=/dev/$SODREALNAME bs=512 count=1 2>&1 |grep GRUB)" ]; then grub01edit; fi
+	if [ -f /etc/lilo.conf ] && [ -n "$(dd if=/dev/$SODREALNAME bs=512 count=1 2>&1 |grep LILO)" ]; then liloedit; fi
 	date +%F_%R > /mnt/sosbkp/.sosbkp_timestamp
         echo BACKUPTO="disk" > /var/tmp/sosbkp_info
         echo DEDREAL1=$DEDREAL"1" >> /var/tmp/sosbkp_info
@@ -335,8 +357,8 @@ todisk() {
 # Create backup to partition
 topartition() {
         usercheck
-	componentscheck
 	dedreal
+	componentscheck
 	checkmount
 	mountded
 	collectinfo
@@ -373,9 +395,11 @@ topartition() {
         echo BOOTMP=$BOOTMP >> /var/tmp/sosbkp_info
 	fstabedit
         kernelbak
-        if [ -d /boot/grub2 ]; then grub2edit; fi
-        if [ -f /boot/grub/menu.lst ]; then grub01edit; fi
-        if [ -f /etc/lilo.conf ]; then liloedit; fi
+        if [ -d /etc/grub.d ] && [ -n "$(dd if=/dev/$SODREALNAME bs=512 count=1 2>&1 |grep GRUB)" ]; then grub2edit
+        elif [ -d /etc/grub.d ] && [ $EFI == "yes" ]; then grub2edit
+        fi
+	if [ -f /boot/grub/grub.conf ] && [ -n "$(dd if=/dev/$SODREALNAME bs=512 count=1 2>&1 |grep GRUB)" ]; then grub01edit; fi
+        if [ -f /etc/lilo.conf ] && [ -n "$(dd if=/dev/$SODREALNAME bs=512 count=1 2>&1 |grep LILO)" ]; then liloedit; fi
 	printf "%.${MSGWIDTH}s" "Unmounting the backup device $dots"
 	printf "\033[s%s" "[PROCESSING]"; sleep 1
         umount /mnt/sosbkp > /dev/null && sleep 2; rm -r /mnt/sosbkp >> $TEMPLOG
@@ -469,7 +493,7 @@ collectinfo() {
 	else 
 		BYTSPERSECTOR=0
 	fi
-        BOOTMP=$(grep " /boot" /etc/fstab | awk '{print $2}')
+        BOOTMP=$(grep " /boot" /etc/fstab | grep -v "#" | awk '{print $2}')
         BOOTPART=$(df |grep " /boot" | awk '{print $1}')
 	if [ "$DEDTYPE" == "partition" ] ; then BOOTPARTDED=$(cat /proc/mounts |grep " /boot" |awk '{print $1}'); fi
 	if [ "$DEDTYPE" == "disk" ] ; then BOOTPARTDED=$DEDREAL"1"; fi
@@ -478,7 +502,7 @@ collectinfo() {
         SODREALNAME=$(df |grep "/boot" |awk '{print $1}'| sed 's/[0-9]*//g' |sed 's:/dev/::g')
         BOOTFSSIZE=$(cat /sys/block/$SODREALNAME/$BOOTPARTNAME/size)
         DEDSECTORS=$(cat /sys/block/$SODREALNAME/size)
-	if [ "$DEDTYPE" == "partition" ] ; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTNAME |awk '{print $9}'); fi
+	if [ "$DEDTYPE" == "partition" ]; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTNAME |awk '{print $9}'); fi
 	# BOOTUUID for disk is in the function todisk
 	printf "\033[u%s\n" "[OK]        "
 }
@@ -526,14 +550,19 @@ kernelbak() {
 
 # Edit GRUB 2
 grub2edit() {
-	printf "%.${MSGWIDTH}s" "Editing Grub 2$dots"
+	printf "%.${MSGWIDTH}s" "Editing GRUB 2$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
-	GRUBCFG=$(find /boot -name grub.cfg|grep grub.cfg)
+	GRUBCFG=$(find /boot -name grub.cfg|grep grub.cfg|head -1)
 	DEDROOTREAL=$(df |grep "/mnt/sosbkp$" |awk '{print $1}')
 	if [ -f /etc/grub.d/50_sosbkp ]; then
 		PRINTSTATE="[NO CHANGE]       "
 		echo "No change in GRUB 2" >> $TEMPLOG
 	else
+		if [ $EFI == "yes" ]; then
+			KERNELPATH="/boot"
+		else
+			KERNELPATH=""
+		fi
 		echo "SOSbackup was not found in GRUB 2." >> $TEMPLOG 2>&1
 		source /etc/default/grub
 		echo '#!/bin/bash' > /etc/grub.d/50_sosbkp
@@ -543,23 +572,34 @@ grub2edit() {
 		echo "		load_video" >> /etc/grub.d/50_sosbkp
 		echo "		set gfxpayload=keep" >> /etc/grub.d/50_sosbkp
 		echo "		insmod gzio" >> /etc/grub.d/50_sosbkp
-		echo "		insmod part_msdos" >> /etc/grub.d/50_sosbkp
+		if [ $EFI == "yes" ];then
+			echo "		insmod part_gpt" >> /etc/grub.d/50_sosbkp
+		else
+			echo "		insmod part_msdos" >> /etc/grub.d/50_sosbkp
+		fi
 		echo "		insmod ext2" >> /etc/grub.d/50_sosbkp
 		if [ $SODROOTFS == "xfs" -o $SODBOOTFS == "xfs" ]; then echo "		insmod xfs" >> /etc/grub.d/50_sosbkp ; fi
 		echo "		insmod lvm" >> /etc/grub.d/50_sosbkp
 		echo "		search --no-floppy --fs-uuid --set=root $BOOTUUID" >> /etc/grub.d/50_sosbkp
-		echo "		linux16 /vmlinuz-SOSbackup root=$DEDROOTREAL ro $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_sosbkp
-		echo "		initrd16 /initramfs-SOSbackup.img" >> /etc/grub.d/50_sosbkp
+		echo "		linux "$KERNELPATH"/vmlinuz-SOSbackup root=$DEDROOTREAL ro $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_sosbkp
+		echo "		initrd "$KERNELPATH"/initramfs-SOSbackup.img" >> /etc/grub.d/50_sosbkp
 		echo "}" >> /etc/grub.d/50_sosbkp
 		chmod a+x /etc/grub.d/50_sosbkp
+		if [ -f /usr/sbin/grub2-mkconfig ]; then
+			grub2-mkconfig -o $GRUBCFG &> /dev/null
+		elif [ -f /usr/sbin/grub-mkconfig ]; then
+			grub-mkconfig -o $GRUBCFG &> /dev/null
+		else
+			grub2-mkconfig -o $GRUBCFG &> /dev/null
+		fi
 	        grub2-mkconfig -o $GRUBCFG &> /dev/null 
 		if [ "$DEDTYPE" == "disk" ]; then
 			mount --bind /dev /mnt/sosbkp/dev
 			mount --bind /sys /mnt/sosbkp/sys
 			mount --bind /run /mnt/sosbkp/run
 			mount --bind /proc /mnt/sosbkp/proc
-			chroot /mnt/sosbkp /bin/bash -c "dracut --force --regenerate-all"
-			grub2-install $DEDREAL &> /dev/null
+			chroot /mnt/sosbkp /bin/bash -c "dracut --force --regenerate-all" &> /dev/null
+			#grub2-install $DEDREAL &> /dev/null ###GRUB INSTALLATION TO BACKUP DISK DOES NOT WORK
 			cp -f $GRUBCFG /mnt/sosbkp$GRUBCFG
 			umount /mnt/sosbkp/dev
 			umount /mnt/sosbkp/sys
@@ -607,7 +647,8 @@ grub01edit() {
                         mount --bind /sys /mnt/sosbkp/sys
                         mount --bind /run /mnt/sosbkp/run &> /dev/null
                         mount --bind /proc /mnt/sosbkp/proc
-                        chroot /mnt/sosbkp /bin/bash -c "grub-install $DEDREAL > /dev/null; dracut --force /boot/initramfs-SOSbackup.img"
+                        chroot /mnt/sosbkp /bin/bash -c "dracut --force /boot/initramfs-SOSbackup.img"
+			#grub-install $DEDREAL > /dev/null ###GRUB INSTALLATION TO BACKUP DISK DOES NOT WORK
                         umount /mnt/sosbkp/dev
                         umount /mnt/sosbkp/sys
                         umount /mnt/sosbkp/run &> /dev/null
@@ -659,7 +700,8 @@ clear() {
         echo "Clearing SOSbackup" >> $TEMPLOG
         date >> $TEMPLOG
         killall rsync >> $TEMPLOG 2> /dev/null
-        umount -r /mnt/sosbkp >> $TEMPLOG 2> /dev/null
+        umount -R /mnt/sosbkp >> $TEMPLOG 2> /dev/null
+	umount -R /mnt/sosbkp >> $TEMPLOG 2> /dev/null
         sleep 1
         rm -rf /mnt/sosbkp >> $TEMPLOG 2> /dev/null
 	echo "SOSbackup processes was cleared" >> $TEMPLOG
@@ -728,11 +770,13 @@ show() {
 		printf "\033[u%s\n" "[ERROR]       "
 		printf "INFO: Unable to determine last backup destination."
 	fi
-	printf "\033[u%s\n" "[OK]       "
+	printf "\033[u%s\n" "[OK]        "
         TIMESTAMP=$(cat /mnt/sosbkp/.sosbkp_timestamp)
         NOOFILES=$(du /mnt/sosbkp/ |wc -l|tail -1)
         echo "==================================================="
         echo "SOS Backup created on $TIMESTAMP consist of $NOOFILES files"
+	if [ "$BACKUPTO" == "partition" ]; then echo "Last backup was to partition ( option -p )"; fi
+	if [ "$BACKUPTO" == "disk" ]; then echo "Last backup was to disk ( option -d )"; fi
         echo "==================================================="
         ls -l /mnt/sosbkp
         echo "==================================================="
