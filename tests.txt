@@ -6,8 +6,9 @@ Env.#1			Env.#2			Env.#3			Env.#4			Description
 |CentOS 6		|CentOS 7		|Slackware 14	 	|Ubuntu 16.10		|*OS name
 |BIOS+MBR		|BIOS+MBR		|BIOS+MBR		|EFI+GPT		|*BIOS or EFI?
 |GRUB Legacy		|GRUB 2.0		|LILO			|GRUB 2.0		|*Boot loader
-|Fully compatible	|Fully compatible	|Fully compatible	|***in progress		|*Boot partition SOSbackup
-|Fully compatible	|Fully compatible	|Fully compatible	|***in progress		|*Boot disk SOSbackup using bootloader on the primnary disk
-|Manually install GRUB	|Manually install GRUB	|Fully compatible	|***in progress		|*Boot disk SOSbackup using bootloader on the backup disk
+|RESULT:		|RESULT:		|RESULT:		|RESULT:		|*
+|Fully compatible	|Fully compatible	|Fully compatible	|***in progress		|*Boot SOSbackup partition using boot fs on the primary disk
+|Fully compatible	|Fully compatible	|Fully compatible	|***in progress		|*Boot SOSbackup disk using bootloader on the primnary disk
+|Manually install GRUB	|Manually install GRUB	|Fully compatible	|***in progress		|*Boot SOSbackup disk using bootloader on the backup disk
 ===========
 
