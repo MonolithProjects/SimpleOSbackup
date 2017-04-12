@@ -23,14 +23,14 @@ The main function of SOSbackup is to create a bootable copy og your system. SOSb
 backup disk and add backup device to thr boot loader config file (Grub Legacy, Grub 2.0, LILO). Tt will chek the size of the
 destination device, check if all components are present, generate a log file and send a report via email.
 
-**Create backup to the partition (option -p)**
+**Create backup to the partition (option -p): **
 You can backup the system to a separate disk partition. This option will exclude your current boot partition (for example /boot)
 so this fs will be used also by OS boot from the backup device. However SOSbackup will create a copy of current kernel and
 initramfs on it (the copy will have "SOSbackup" instead of kernel version in the file name). In /etc/sosbkp.conf you can exclude
 another folders or files which you do not want to backup. before you start the backup, your destination backup partition needs
 to be formatted (ideally to ext4). 
 
-**Create backup to the disk (option -d)**
+**Create backup to the disk (option -d): **
 You can backup the system to a separate disk. You need one empty disk drive. SOSbackup will automatically create 
 a 500MB boot partition and format it to vfat for EFI+GPT or to ext2 BIOS+MBR. Then it will create second partition for 
 the rest of the data (size will depend of the size of backed up the data) and format it to ext4 or xfs (depends on what
