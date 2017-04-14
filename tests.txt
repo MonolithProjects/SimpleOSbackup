@@ -8,7 +8,7 @@ Env.#1			Env.#2			Env.#3			Env.#4			Description
 |GRUB Legacy		|GRUB 2.0		|LILO			|GRUB 2.0		|*Boot loader
 |RESULT:		|RESULT:		|RESULT:		|RESULT:		|*
 |Fully compatible	|Fully compatible	|Fully compatible	|Fully compatible	|*Boot SOSbackup partition using boot fs on the primary disk
-|Fully compatible	|***Broken		|Fully compatible	|***in progress		|*Boot SOSbackup disk using bootloader on the primnary disk
+|Fully compatible	|Fully compatible	|Fully compatible	|Fully compatible	|*Boot SOSbackup disk using bootloader on the primnary disk
 |Manually install GRUB	|Manually install GRUB	|Fully compatible	|Manually install GRUB	|*Boot SOSbackup disk using bootloader on the backup disk
 ===========
 
