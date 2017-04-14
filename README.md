@@ -32,11 +32,12 @@ to be formatted with the same type of fas as is using your current root partitio
 
 **Create backup to the disk (option -d):**
 You can backup the system to a separate disk. You need one empty disk drive. SOSbackup will automatically create 
-a 500MB boot partition and format it to vfat for EFI+GPT or to ext2 BIOS+MBR. Then it will create second partition for 
-the rest of the data (size will depend of the size of backed up the data) and format it to ext4 or xfs (depends on what
-filesystem is using the original root partition). If yum are using LILO, SOSbackup will install aslo the boot loader into 
-the backup disk. If you are using Grub, you will need to boot the backup OS and install it manually to the backup disk (just 
-run grub-install or grub2-install). This will help you to boot your backup system in case your primary boot disk will fail.
+a boot partition with the same size as the original and format it to vfat for EFI+GPT or to ext2 BIOS+MBR. 
+Then it will create a second partition for the rest of the data (size will depend of the size of backed up the data)
+and format it to ext4 or xfs (depends on what filesystem is using the original root partition). If yum are using LILO, 
+SOSbackup will install aslo the boot loader into the backup disk. If you are using Grub, you will need to boot the backup OS and
+install it manually to the backup disk (just run grub-install or grub2-install). This will help you to boot your backup system in 
+case your primary boot disk will fail.
 
 
 **How to use sosbkp:**
