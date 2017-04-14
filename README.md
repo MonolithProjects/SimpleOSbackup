@@ -26,9 +26,9 @@ destination device, check if all components are present, generate a log file and
 **Create backup to the partition (option -p):**
 You can backup the system to a separate disk partition. This option will exclude your current boot partition (for example /boot)
 so this fs will be used also by OS boot from the backup device. However SOSbackup will create a copy of current kernel and
-initramfs on it (the copy will have "SOSbackup" instead of kernel version in the file name). In /etc/sosbkp.conf you can exclude
+initramfs on it (the kernel version in the file name will be replaced with word "SOSbackup"). In /etc/sosbkp.conf you can exclude
 another folders or files which you do not want to backup. before you start the backup, your destination backup partition needs
-to be formatted (ideally to ext4). 
+to be formatted with the same type of fas as is using your current root partition. 
 
 **Create backup to the disk (option -d):**
 You can backup the system to a separate disk. You need one empty disk drive. SOSbackup will automatically create 
