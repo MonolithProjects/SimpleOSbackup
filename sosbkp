@@ -2,8 +2,8 @@
 
 #title           :SimpleOSbackup
 #author          :Michal Muransky
-#date            :11-April-17
-version=BETA
+#date            :14-April-17
+version=1.0
 
 
 
@@ -269,6 +269,7 @@ todisk() {
         echo "SOSbackup Report" >> $TEMPLOG
         echo "Backup to partition "$DEDREAL >> $TEMPLOG
         date >> $TEMPLOG
+	echo "Created the partitions "$DEDREAL"1 and "$DEDREAL"2" >> $TEMPLOG
 	printf "%.${MSGWIDTH}s" "Editing partition table$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
         DEDBP="/tmp/dedbp"
@@ -294,7 +295,6 @@ todisk() {
         fi
         sfdisk --force -q $DEDREAL < $DEDBP &>/dev/null
 	printf "\033[u%s\n" "[OK]        "
-	echo "Created the partitions "$DEDREAL"1 and "$DEDREAL"2" >> $TEMPLOG
 	printf "%.${MSGWIDTH}s" "Formatting $DEDREAL"1" and $DEDREAL"2"$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
         if [ "$EFI" == "yes" ]; then
@@ -502,7 +502,11 @@ collectinfo() {
         SODREALNAME=$(df |grep "/boot" |awk '{print $1}'| sed 's/[0-9]*//g' |sed 's:/dev/::g')
         BOOTFSSIZE=$(cat /sys/block/$SODREALNAME/$BOOTPARTNAME/size)
         DEDSECTORS=$(cat /sys/block/$SODREALNAME/size)
-	if [ "$DEDTYPE" == "partition" ]; then BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTNAME |awk '{print $9}'); fi
+	SOBOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTNAME |awk '{print $9}')
+	if [ "$DEDTYPE" == "partition" ]; then 
+		BOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTNAME |awk '{print $9}') 
+		SOROOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $DEDREALNAME |awk '{print $9}')
+	fi
 	# BOOTUUID for disk is in the function todisk
 	printf "\033[u%s\n" "[OK]        "
 }
@@ -544,6 +548,7 @@ kernelbak() {
         cp -f /boot/vmlinuz-`uname -r` /boot/vmlinuz-SOSbackup 2>/dev/null
         cp -f /boot/vmlinuz-huge-`uname -r` /boot/vmlinuz-SOSbackup 2>/dev/null
 	cp -f /boot/initramfs-`uname -r`.img /boot/initramfs-SOSbackup.img 2>/dev/null
+	cp -f /boot/initrd.img-`uname -r` /boot/initramfs-SOSbackup.img 2>/dev/null
 	printf "\033[u%s\n" "[OK]         "
 	echo "Created backup of current kernel" >> $TEMPLOG
 }
@@ -580,7 +585,11 @@ grub2edit() {
 		echo "		insmod ext2" >> /etc/grub.d/50_sosbkp
 		if [ $SODROOTFS == "xfs" -o $SODBOOTFS == "xfs" ]; then echo "		insmod xfs" >> /etc/grub.d/50_sosbkp ; fi
 		echo "		insmod lvm" >> /etc/grub.d/50_sosbkp
-		echo "		search --no-floppy --fs-uuid --set=root $BOOTUUID" >> /etc/grub.d/50_sosbkp
+		if [ "$DEDTYPE" == "partition" ] && [ $EFI == "yes" ]; then
+			echo "          search --no-floppy --fs-uuid --set=root $SOROOTUUID" >> /etc/grub.d/50_sosbkp
+		else
+			echo "		search --no-floppy --fs-uuid --set=root $BOOTUUID" >> /etc/grub.d/50_sosbkp
+		fi
 		echo "		linux "$KERNELPATH"/vmlinuz-SOSbackup root=$DEDROOTREAL ro $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_sosbkp
 		echo "		initrd "$KERNELPATH"/initramfs-SOSbackup.img" >> /etc/grub.d/50_sosbkp
 		echo "}" >> /etc/grub.d/50_sosbkp
@@ -853,7 +862,7 @@ help() {
         echo "-h, --help				This Help page"
         echo ""
 	echo ""
-        echo "Example:"
+        echo "Examples:"
         echo "sosbkp --to-partition=/dev/sdb1"
         echo "sosbkp -Sxp /dev/sdb1"
 	echo "sosbkp -S -f -p /dev/mapper/backup_vg-backup_lv"
