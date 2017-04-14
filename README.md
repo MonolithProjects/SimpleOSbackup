@@ -4,14 +4,14 @@ SimpleOSbackup or simply - SOSbackup is a bash shell script used for backup of L
 You can run backup to a partition or whole disk. In case you are running backup to a partition, 
 the backup will exclude  boot  fs (/boot, /boot/efi etc.). If you are running backup to a disk, 
 SOSbackup will erease current partition table on it (if there is any) and create a new one. 
-More info in the section of specific functions.
+More info in the section of specific functions
 
-Backup is fully operational and can choosen from GRUB or LILO menu. The boot loader on the original 
-disk is still needed. So far the boot loader on the backup device does not work. In the situation 
-where your original disk will break up you will need to install the GRUB or LILO manually to the backup 
-device. One day maybe i will implement that into the script too :). However, the boot loader config 
+Backup is fully operational and can be choosen from GRUB or LILO menu and booted. The boot loader on the original 
+disk is still needed. So far the boot loader on the backup device does not work. In situation where your 
+original disk will fail you will need to install the GRUB or LILO manually to the backup device.
+One day maybe i will implement that function into the script too :). However, the boot loader config 
 file will be configured by SOSbackup so you will not need to edit it manually. 
-You must be a root to be able to run SOSbackup for OS backup.
+You must have root privileges to be able to run SOSbackup for OS backup.
 This script was tested on several Linux distributions in various configurations. 
 	    
 I am not responsible for any damage done using this tool.
@@ -39,6 +39,43 @@ SOSbackup will install aslo the boot loader into the backup disk. If you are usi
 install it manually to the backup disk (just run grub-install or grub2-install). This will help you to boot your backup system in 
 case your primary boot disk will fail.
 
+**Standard output:**
+```
+[root@localhost ~]# ./sosbkp -d vdb
+Checking the user.................................[OK]
+Looking for destination...........................[OK]
+Checking mailx....................................[MISSING]
+Checking rsync....................................[OK]
+Checking dracut...................................[OK]
+Checkink if the destination is already mounted....[OK]
+Checkink last patching date.......................[OK]
+Collectiong information...........................[OK]
+Checking the destionation disk size...............[OK]
+Checking destination type.........................[OK]
+Editing partition table...........................[OK]
+Formatting /dev/vdb1 and /dev/vdb2................[OK]
+Mounting backup device............................[OK]
+Creating copy of current kernel...................[OK]
+Running backup....................................[OK]
+Editing fstab on backup device....................[OK]
+Editing GRUB......................................[NO CHANGE]
+Unmounting backup device..........................[OK]
+```
+
+**Good to know:**
+
+You will need to have root privileges to crate a backup or view the state of previous backup.
+
+Backup will be interrupted if the backup destination is already mounted, if the running kernel was installed less than 7 days back,
+if the destination is too small (all can me overcomed by option -f).
+
+Backup will fail if tool rsync is missing. It will fail also if dracut is missing but you can force the backup by option -f.
+If mailx is missing, you will be onl informed about that (of course the report will be not sent via email).
+
+The SOSbackup will always delete the data from backup device before it will create a copy. This behaviour can be changed by option -n 
+is accepted for backup to partition (-p).
+
+If the config file /etc/sosbkp.conf is missing, SOSbackup will generate one by the first run.
 
 **How to use sosbkp:**
 ```
@@ -59,7 +96,7 @@ sosbkp [OPTIONS]...
                               SOSbackup will erease existing partitions on the backup device any and create
                               two new partitions. The first one is for boot fs and the second for the rest
                               of the data. SOSbackup will edit boot loader menu and add the new boot device.
-                              The backup device will be not bootable (even the configuration 
+`                              The backup device will be not bootable (even the configuration 
                               files are ready and do not need to be edited). In case your 
                               original boot device will fail or damage, you will need to 
                               install the boot loader to the new disk (backup disk).
@@ -69,7 +106,7 @@ sosbkp [OPTIONS]...
 	    
 -x, --no-email                Report will be not sent via email 
 	    
--X, --no-selinux              Do not copy SELinux labels 
+`-X, --no-selinux              Do not copy SELinux labels 
 	    
 -c, --clear                   Can be used after interrupted backup 
 	    
@@ -79,7 +116,8 @@ sosbkp [OPTIONS]...
 -s, --show                    Show last backup info 
 	    
 -f, --force                   Force backup and suppress warnings. (Missing rsync can not be suppresed) 
-	    
+
+
 -v, --version                 Show SOSbackup version 
 	    
     --debug                   Debug mode 
@@ -94,4 +132,39 @@ sosbkp -Sxp /dev/sdb1
 sosbkp -S -f -p /dev/mapper/backup_vg-backup_lv 
 sosbkp --no-selinux -d /dev/sdc 
 sosbkp -d sdc
+```
+
+**Config file**
+```
+### Simple OS backup configuration file
+### Exclude following folders from backup
+EXCLUDE=(/mnt /media /lost+found)
+
+### Log file location
+LOGFILE=/var/log/myoscopy.log
+
+### Path to custom shutdown script (optional)
+SHUTSCRIPT=
+
+### GRUB title for backup disk (This will be ignored if you are using LILO. For LILO is the title/label hardcoded as "SOSbackup")
+TITLE="Boot from SOSbackup disk"
+
+### Email address where you want to receive the report
+EMAIL=youremail@yourdomain.com
+
+
+### External Gmail SMTP server:
+
+### Server address and port
+SMTP="smtp.gmail.com:587"
+
+### User name for the email account in format "something@gmail.com"
+SMTPUSER="sosbkpsenderemail@gmail.com"
+
+### Password to the email account
+### You need to allow access for less secure apps - https://www.google.com/settings/security/lesssecureapps
+SMTPPASS=""
+
+### Certificates
+NSSCONFIGDIR="/etc/pki/nssdb/"
 ```
