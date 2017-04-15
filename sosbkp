@@ -2,8 +2,8 @@
 
 #title           :SimpleOSbackup
 #author          :Michal Muransky
-#date            :14-April-17
-version=1.0
+#date            :xx-April-17
+version=1.0.1
 
 
 
@@ -559,6 +559,8 @@ grub2edit() {
         printf "\033[s%s" "[PROCESSING]"; sleep 1
 	GRUBCFG=$(find /boot -name grub.cfg|grep grub.cfg|head -1)
 	DEDROOTREAL=$(df |grep "/mnt/sosbkp$" |awk '{print $1}')
+	LINUX=$(grep "`cat /proc/cmdline|sed 's:BOOT_IMAGE=::g'`" $GRUBCFG | head -1 | awk '{print $1}')
+	INITRD=$(grep initrd $GRUBCFG |head -1|awk '{print $1}')
 	if [ -f /etc/grub.d/50_sosbkp ]; then
 		PRINTSTATE="[NO CHANGE]       "
 		echo "No change in GRUB 2" >> $TEMPLOG
@@ -590,8 +592,8 @@ grub2edit() {
 		else
 			echo "		search --no-floppy --fs-uuid --set=root $BOOTUUID" >> /etc/grub.d/50_sosbkp
 		fi
-		echo "		linux "$KERNELPATH"/vmlinuz-SOSbackup root=$DEDROOTREAL ro $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_sosbkp
-		echo "		initrd "$KERNELPATH"/initramfs-SOSbackup.img" >> /etc/grub.d/50_sosbkp
+		echo "		"$LINUX $KERNELPATH"/vmlinuz-SOSbackup root=$DEDROOTREAL ro $GRUB_CMDLINE_LINUX" >> /etc/grub.d/50_sosbkp
+		echo "		"$INITRD $KERNELPATH"/initramfs-SOSbackup.img" >> /etc/grub.d/50_sosbkp
 		echo "}" >> /etc/grub.d/50_sosbkp
 		chmod a+x /etc/grub.d/50_sosbkp
 		if [ -f /usr/sbin/grub2-mkconfig ]; then

@@ -2,6 +2,9 @@
 # Change Log                         >>>>>>>>>>>>>>>
 #===================================================
 #
+# Version 1.0.1
+# - improved the Grub 2.0 compatibility
+#
 # Version 1.0 
 # Main functions:
 # - create bootable OS backup to separate disk
