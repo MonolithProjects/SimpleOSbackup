@@ -2,6 +2,10 @@
 # Change Log                         >>>>>>>>>>>>>>>
 #===================================================
 #
+# Version 1.0.2
+# - fixed long backup device names issue (-p)
+# - fixed missing kernel parameters in GRUB Legacy
+#
 # Version 1.0.1
 # - improved the Grub 2.0 compatibility
 #

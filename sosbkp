@@ -2,8 +2,8 @@
 
 #title           :SimpleOSbackup
 #author          :Michal Muransky
-#date            :xx-April-17
-version=1.0.1
+#date            :02-May-17
+version=1.0.2
 
 
 
@@ -470,8 +470,8 @@ dedreal() {
 collectinfo() {
         printf "%.${MSGWIDTH}s" "Collectiong information$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
-	SODBOOTFS=$(df -T /boot | grep -v Type |awk '{print $2}')
-	SODROOTFS=$(df -T / | grep -v Type |awk '{print $2}')
+	SODBOOTFS=$(df -PT /boot | grep -v Type |awk '{print $2}')
+	SODROOTFS=$(df -PT / | grep -v Type |awk '{print $2}')
         EXCEPTGREP=${EXCLUDE[@]/#/|}; EXCEPTGREP=$(echo "$EXCEPTGREP"| cut -c 2- |tr -d " \t\n\r" )
         WHAT=$(cat /etc/fstab |grep -vE "#|swap|SWAP|sosbkp" |grep -vE "$EXCEPTGREP" | grep -E "UUID|/dev" |awk '{print $2}'| sed ':a;N;$!ba;s/\n/ /g')
         NLINES=$(df -kP $WHAT | sed 1d |uniq | wc -l)
@@ -494,12 +494,12 @@ collectinfo() {
 		BYTSPERSECTOR=0
 	fi
         BOOTMP=$(grep " /boot" /etc/fstab | grep -v "#" | awk '{print $2}')
-        BOOTPART=$(df |grep " /boot" | awk '{print $1}')
+        BOOTPART=$(df -P |grep " /boot" | awk '{print $1}')
 	if [ "$DEDTYPE" == "partition" ] ; then BOOTPARTDED=$(cat /proc/mounts |grep " /boot" |awk '{print $1}'); fi
 	if [ "$DEDTYPE" == "disk" ] ; then BOOTPARTDED=$DEDREAL"1"; fi
         BOOTPARTNAME=$(echo $BOOTPART | sed 's:/dev/::g')
 	BOOTPARTDEDNAME=$(echo $BOOTPARTDED | sed 's:/dev/::g')
-        SODREALNAME=$(df |grep "/boot" |awk '{print $1}'| sed 's/[0-9]*//g' |sed 's:/dev/::g')
+        SODREALNAME=$(df -P |grep "/boot" |awk '{print $1}'| sed 's/[0-9]*//g' |sed 's:/dev/::g')
         BOOTFSSIZE=$(cat /sys/block/$SODREALNAME/$BOOTPARTNAME/size)
         DEDSECTORS=$(cat /sys/block/$SODREALNAME/size)
 	SOBOOTUUID=$(ls -l /dev/disk/by-uuid/ | grep $BOOTPARTNAME |awk '{print $9}')
@@ -558,7 +558,7 @@ grub2edit() {
 	printf "%.${MSGWIDTH}s" "Editing GRUB 2$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
 	GRUBCFG=$(find /boot -name grub.cfg|grep grub.cfg|head -1)
-	DEDROOTREAL=$(df |grep "/mnt/sosbkp$" |awk '{print $1}')
+	DEDROOTREAL=$(df -P |grep "/mnt/sosbkp$" |awk '{print $1}')
 	LINUX=$(grep "`cat /proc/cmdline|sed 's:BOOT_IMAGE=::g'`" $GRUBCFG | head -1 | awk '{print $1}')
 	INITRD=$(grep initrd $GRUBCFG |head -1|awk '{print $1}')
 	if [ -f /etc/grub.d/50_sosbkp ]; then
@@ -628,7 +628,7 @@ grub01edit() {
         printf "%.${MSGWIDTH}s" "Editing GRUB$dots"
         printf "\033[s%s" "[PROCESSING]"; sleep 1
 	GRUBCFG=$(find /boot -name grub.conf|grep grub.conf)
-	DEDROOTREAL=$(df |grep "/mnt/sosbkp$" |awk '{print $1}')
+	DEDROOTREAL=$(df -P |grep "/mnt/sosbkp$" |awk '{print $1}')
 	DEVMAP=$(find /boot -name device.map)
 	if [ "$DEDTYPE" == "disk" ]; then
 		if grep -q "$DEDREAL" $DEVMAP ; then
@@ -648,7 +648,7 @@ grub01edit() {
 		echo "#SOSbackup auto generated GRUB entry - START" >> $GRUBCFG
 		echo "title $TITLE" >> $GRUBCFG
 		echo "$ROOTHD" >> $GRUBCFG
-		AFTERKERNEL=$(cat /boot/grub/grub.conf |grep "kernel /vmlinuz-"| grep -v "#" |head -1| cut -d" " -f5-)
+		AFTERKERNEL=$(cat /proc/cmdline | cut -d" " -f3- | sed -e "s/rd_LVM_LV=.*\s//g")
 		echo "		kernel /vmlinuz-SOSbackup ro root=$DEDROOTREAL" $AFTERKERNEL >> $GRUBCFG
 		echo "		initrd /initramfs-SOSbackup.img " >> $GRUBCFG
 		echo "#SOSbackup auto generated GRUB entry - END" >> $GRUBCFG
