@@ -343,10 +343,10 @@ todisk() {
 	rm -fr /mnt/sosbkp	
         echo "Unmounted the backup device" >> $TEMPLOG
         echo "Backup was successfull" >> $TEMPLOG
-        sleep 1
         rm -rf /mnt/sosbkp > /dev/null
         cat $TEMPLOG >> $LOGFILE
         sendlog
+	sleep 1
 	shutdownserver
 	exit 0
 }
@@ -403,10 +403,10 @@ topartition() {
 	printf "\033[u%s\n" "[OK]         "
 	echo "Unmounted the backup device" >> $TEMPLOG
         echo "Backup was successfull" >> $TEMPLOG
-        sleep 1
         rm -rf /mnt/sosbkp > /dev/null
         cat $TEMPLOG >> $LOGFILE
-	sendlog		
+        sendlog
+        sleep 1		
         shutdownserver
         exit 0
 }
