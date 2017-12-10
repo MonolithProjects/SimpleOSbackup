@@ -2,8 +2,8 @@
 
 #title           :SimpleOSbackup
 #author          :Michal Muransky
-#date            :02-May-17
-version=1.0.2
+#date            :10-Dec-17
+version=1.0.3
 
 
 
@@ -20,7 +20,7 @@ version=1.0.2
 TEMPLOG=/tmp/sosbkp.txt
 
 # Path to settings file
-SETTINGS=/etc/sosbkp.conf
+SETTINGS=$(dirname "$0")/sosbkp.conf
 
 # Delete previous backup
 DEL=1
@@ -85,18 +85,15 @@ SMTPPASS=""
 NSSCONFIGDIR="/etc/pki/nssdb/"
 
 EOF
-else
+fi
 
 # Read config file
 source $SETTINGS
-fi
-
 
 # Dots displayed in messages
 dots="..........................................."
 dots=$dots$dots$dots
 if [ ! -f $LOGFILE ]; then touch $LOGFILE ;fi
-source $SETTINGS
 
 # MANDATORY CHECKS:
 
@@ -265,7 +262,7 @@ todisk() {
 	printf "\033[u%s\n" "[OK]           "
         > $TEMPLOG
         echo "" >> $TEMPLOG
-        echo "============================" >> $TEMPLOG
+        echo "===========================" >> $TEMPLOG
         echo "SOSbackup Report" >> $TEMPLOG
         echo "Backup to partition "$DEDREAL >> $TEMPLOG
         date >> $TEMPLOG
@@ -346,11 +343,11 @@ todisk() {
 	rm -fr /mnt/sosbkp	
         echo "Unmounted the backup device" >> $TEMPLOG
         echo "Backup was successfull" >> $TEMPLOG
-        sendlog
-        sleep 1
         rm -rf /mnt/sosbkp > /dev/null
         cat $TEMPLOG >> $LOGFILE
-        shutdonwserver
+        sendlog
+	sleep 1
+	shutdownserver
 	exit 0
 }
 
@@ -406,11 +403,11 @@ topartition() {
 	printf "\033[u%s\n" "[OK]         "
 	echo "Unmounted the backup device" >> $TEMPLOG
         echo "Backup was successfull" >> $TEMPLOG
-        sendlog
-        sleep 1
         rm -rf /mnt/sosbkp > /dev/null
         cat $TEMPLOG >> $LOGFILE
-        shutdonwserver
+        sendlog
+        sleep 1		
+        shutdownserver
         exit 0
 }
 
@@ -728,6 +725,9 @@ sendlog() {
 		if [ -z $SMTPPASS ]; then
 			PRINTSTATE="[ERROR]            "
 		else
+			if [ $SHUT == 1 ]; then
+				echo "Server will be shutdown" >> $TEMPLOG 2> /dev/null
+			fi
 			cat -v $TEMPLOG | mailx -r $SMTPUSER -s "SOSbackup report" -S smtp=$SMTP -S smtp-use-starttls -S smtp-auth=login -S smtp-auth-user=$SMTPUSER -S smtp-auth-password=$SMTPPASS -S ssl-verify=ignore -S nss-config-dir=$NSSCONFIGDIR $EMAIL 2> /dev/null
 			PRINTSTATE="[OK]            "
 		fi
@@ -736,7 +736,7 @@ sendlog() {
 }
 
 # Shutdown the machine
-shutdonwserver() {
+shutdownserver() {
         if [ $SHUT == 1 ]; then
 		printf "%s\n" "INFO: Shutting down the system..."
 		echo "Shutting down the system..." >> $LOGFILE 
